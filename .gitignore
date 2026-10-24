@@ -11,3 +11,6 @@
 # systèmes
 .DS_Store
 Thumbs.db
+/vendor/
+/composer.lock
+.phpunit.cache/
