@@ -37,6 +37,9 @@ class SentinelleExtension extends Extension
 
         $loader = new PhpFileLoader($container, new FileLocator(\dirname(__DIR__, 2).'/config'));
         $loader->load('services.php');
+        if (!$config['breach_watch']) {
+            $container->removeDefinition(\Acencyril\SentinelleBundle\EventListener\BreachWatchListener::class);
+        }
 
         foreach ([
                      'sentinelle.alert.recipient'        => $config['alert']['recipient'],
@@ -44,6 +47,8 @@ class SentinelleExtension extends Extension
                      'sentinelle.alert.sender_name'      => $config['alert']['sender_name'],
                      'sentinelle.alert.site_name'        => $config['alert']['site_name'],
                      'sentinelle.alert.cooldown'         => $config['alert']['cooldown'],
+                     'sentinelle.alert.quiet_when_blocked' => $config['alert']['quiet_when_blocked'],
+                     'sentinelle.breach_watch'           => $config['breach_watch'],
 
                      'sentinelle.access.role'            => $config['access']['role'],
                      'sentinelle.access.prefix'          => $config['access']['prefix'],

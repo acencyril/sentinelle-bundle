@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use Acencyril\SentinelleBundle\Command\CheckCommand;
+use Acencyril\SentinelleBundle\Command\DigestCommand;
+use Acencyril\SentinelleBundle\EventListener\BreachWatchListener;
+use Acencyril\SentinelleBundle\Service\IpHistory;
 use Acencyril\SentinelleBundle\Command\PurgeCommand;
 use Acencyril\SentinelleBundle\Controller\ActivityController;
 use Acencyril\SentinelleBundle\EventListener\BlockedIpListener;
@@ -41,6 +44,9 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             '%sentinelle.dry_run%',
         ]);
 
+    $services->set(IpHistory::class)
+        ->args([service('doctrine.dbal.default_connection')]);
+
     $services->set(SecurityAlert::class)
         ->args([
             service('mailer.mailer'),
@@ -50,6 +56,27 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             '%sentinelle.alert.sender%',
             '%sentinelle.alert.sender_name%',
             '%sentinelle.alert.site_name%',
+            service(IpHistory::class),
+            '%sentinelle.alert.quiet_when_blocked%',
+        ]);
+
+    /* After the activity listener (default priority 0) on kernel.terminate: the history in
+       the email includes this very request. */
+    $services->set(BreachWatchListener::class)
+        ->args([
+            service('mailer.mailer'),
+            service(IpBlocklist::class),
+            service(IpHistory::class),
+            service(SiteEventLogger::class),
+            service('cache.app'),
+            service('logger'),
+            '%sentinelle.alert.recipient%',
+            '%sentinelle.alert.sender%',
+            '%sentinelle.alert.site_name%',
+            '%kernel.environment%',
+        ])
+        ->tag('kernel.event_listener', [
+            'event' => 'kernel.terminate', 'method' => 'onKernelTerminate', 'priority' => -64,
         ]);
 
     $services->set(SiteEventLogger::class)
@@ -110,6 +137,16 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             '%sentinelle.allowlist%',
             '%sentinelle.dry_run%',
             '%sentinelle.alert.recipient%',
+        ])
+        ->tag('console.command');
+
+    $services->set(DigestCommand::class)
+        ->args([
+            service('doctrine.dbal.default_connection'),
+            service('mailer.mailer'),
+            '%sentinelle.alert.recipient%',
+            '%sentinelle.alert.sender%',
+            '%sentinelle.alert.site_name%',
         ])
         ->tag('console.command');
 

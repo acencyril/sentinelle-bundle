@@ -6,6 +6,26 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-24
+
+### Added
+- **Breach watch** (`breach_watch`, on by default): looks at the answers, not only the attempts.
+  A sensitive file served with a 2xx (.env, .git, keys, dumps, logs, debug tools) or a secret
+  in a response blocks the address for 30 days and sends a red, top-priority alert at once,
+  with what to do now.
+- Every alert carries what the address did in the last 48 hours (`IpHistory`).
+- `sentinelle:digest`: one email a day with the addresses blocked, by reason, and any
+  sensitive answer served. Nothing happened: nothing is sent. Run it from cron or a scheduler.
+- Tests (PHPUnit).
+
+### Changed
+- **Quiet when blocked** (`alert.quiet_when_blocked`, on by default): no email for an address
+  already blocked whose tries all failed. Scanners probe every site all day; on one production
+  site those emails were about 200 a week and buried the ones that mattered. They are counted
+  in the digest. Set it to `false` to keep the old behaviour.
+- An alert whose address got a sensitive answer is red: "🔴🔴 POSSIBLE BREACH" subject, highest
+  priority, the served rows in red.
+
 ## [0.3.1] — 2026-09-01
 
 ### Fixed
