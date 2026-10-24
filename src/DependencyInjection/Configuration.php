@@ -36,6 +36,9 @@ class Configuration implements ConfigurationInterface
             ->scalarNode('site_name')->defaultValue('the site')
             ->info('Appears in the subject line: "Security alert <name>".')
             ->end()
+            ->booleanNode('quiet_when_blocked')->defaultTrue()
+            ->info('No email for an address already blocked whose tries all failed (scanners): they are counted in sentinelle:digest. A sensitive answer served always alerts.')
+            ->end()
             ->integerNode('cooldown')->defaultValue(3600)
             ->info('Seconds between two alerts for the same IP. One email per attack drowns the information from the first serious scan onwards.')
             ->end()
@@ -52,6 +55,11 @@ class Configuration implements ConfigurationInterface
             ->info('Route for the back link. Null means no button.')
             ->end()
             ->end()
+            ->end()
+
+            ->booleanNode('breach_watch')
+            ->defaultTrue()
+            ->info('Watch the ANSWERS: a sensitive file served with a 2xx, or a secret in a response, blocks the address and sends a red alert at once.')
             ->end()
 
             ->booleanNode('dry_run')

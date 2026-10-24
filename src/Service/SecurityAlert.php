@@ -25,6 +25,13 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * three in the morning to redo by hand what had already happened on its own.
  * It now states the actual situation: blocked until such a date, or not blocked
  * and why.
+ *
+ * Since 0.4: the alert carries what the address did in the last 48 hours, and it is only sent
+ * when it matters. An address already blocked whose tries all failed sends nothing
+ * (`alert.quiet_when_blocked`, on by default): scanners probe every site all day, and those
+ * emails buried the ones that counted. When a sensitive address was answered with a 2xx, the
+ * email turns red, top priority, "POSSIBLE BREACH" in the subject. The quiet blocks are
+ * counted in the daily digest (sentinelle:digest).
  */
 class SecurityAlert
 {
@@ -36,6 +43,8 @@ class SecurityAlert
         private string $sender,
         private string $senderName,
         private string $siteName,
+        private ?IpHistory $history = null,
+        private bool $quietWhenBlocked = true,
     ) {
     }
 
@@ -45,6 +54,11 @@ class SecurityAlert
     public function notify(array $context, ?BlockedIp $blocked = null): void
     {
         $esc = static fn (?string $v): string => htmlspecialchars((string) ($v ?? '—'), \ENT_QUOTES, 'UTF-8');
+        $history = $this->history?->of($context['ip']) ?? [];
+        $served = IpHistory::served($history);
+        if ($this->quietWhenBlocked && null !== $blocked && !$served) {
+            return;
+        }
 
         $rows = [
             'Pattern' => $esc($context['detail'] ?? null),
@@ -85,31 +99,43 @@ class SecurityAlert
             // router does not know the hostname protects nobody.
         }
 
-        $subject = sprintf('🚨 Security alert %s — %s (%s)',
-            $this->siteName, $context['reason'], $context['ip']);
+        $subject = $served
+            ? sprintf('🔴🔴 POSSIBLE BREACH %s — %s (%s)', $this->siteName, $context['reason'], $context['ip'])
+            : sprintf('🚨 Security alert %s — %s (%s)', $this->siteName, $context['reason'], $context['ip']);
+        $banner = $served
+            ? '<div style="background:#7f1d1d;color:#fff;padding:14px;text-align:center;font-weight:900;font-size:16px">🔴 '.\count($served).' sensitive address(es) answered 2xx to this IP: see the red rows below. Data may have left.</div>'
+            : ($this->history ? '<div style="background:#ecfdf5;color:#065f46;padding:10px 14px;font-size:13px">✓ None of its requests to a sensitive address succeeded in the last 48 hours.</div>' : '');
+        $historyHtml = $this->history ? '<h3 style="font-size:14px;margin:16px 0 6px">Its last '.\count($history).' requests (48 h)</h3>'.IpHistory::html($history) : '';
 
-        $this->send($subject, <<<HTML
+        $this->send($subject, $served ? Email::PRIORITY_HIGHEST : Email::PRIORITY_HIGH, <<<HTML
             <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:16px">
               <div style="background:#b91c1c;color:#fff;padding:16px;border-radius:8px 8px 0 0;text-align:center">
                 <strong style="font-size:18px">🚨 {$esc($context['reason'])}</strong>
               </div>
+              {$banner}
               <div style="background:#fff;padding:16px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
                 <table style="width:100%;font-size:13px">{$rowsHtml}</table>
                 <p style="font-size:12px;color:#64748b;margin:16px 0 0">{$footer}<br>
                 At most one alert per IP per hour.</p>
+                {$historyHtml}
               </div>
             </div>
             HTML);
     }
 
-    private function send(string $subject, string $html): void
+    private function send(string $subject, int $priority, string $html): void
     {
         try {
-            $this->mailer->send((new Email())
+            $email = (new Email())
                 ->from(new Address($this->sender, $this->senderName))
                 ->to($this->recipient)
+                ->priority($priority)
                 ->subject($subject)
-                ->html($html));
+                ->html($html);
+            if (Email::PRIORITY_HIGHEST === $priority) {
+                $email->getHeaders()->addTextHeader('Importance', 'high');
+            }
+            $this->mailer->send($email);
         } catch (\Throwable $e) {
             // An alarm that breaks the site destroys more than it defends.
             $this->logger->warning('Security alert not sent', [
