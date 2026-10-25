@@ -1,5 +1,5 @@
 # Tags a release when CHANGELOG.md names a version that has no tag yet (Packagist picks the tag
-# up). Releases are tagged here because Claude's sessions cannot create tags themselves.
+# up). Releases are tagged here, from the CHANGELOG, so a version is never forgotten.
 name: release
 on:
   push:
