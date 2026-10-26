@@ -6,6 +6,27 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-10-27
+
+### Changed
+- **The dashboard looks good by default and blends into any admin.** Summary tiles for the last
+  24 hours (addresses blocked now, requests refused, exploitation attempts, probes, sensitive
+  answers served, human passes, page views), each opening the log filtered on its kind; every
+  kind as a pill; readable tables with a header row, zebra rows and hover; status pills in words
+  and colour; a badge saying whether Sentinelle is in dry-run.
+- Every colour, font and radius is a `--sentinelle-*` custom property (documented in the README,
+  "The dashboard's look"). The defaults derive from the page's text colour, so the dashboard
+  reads on a light and on a dark admin alike, in the host's font. No inline colour anywhere, no
+  external resource, no JavaScript.
+- Tables scroll inside their own frame: no sideways page scroll on a phone.
+- The dashboard is in English and French (the request's locale), domain `sentinelle`, keys
+  `dashboard.*`, the application's translations first; the flash messages too. Without the
+  translation component, the bundled texts are used.
+- The markup can be overridden in parts: blocks `sentinelle_content` and `sentinelle_styles`.
+
+### Fixed
+- A log row whose `meta` column is NULL no longer breaks the dashboard.
+
 ## [0.5.0] — 2026-10-26
 
 ### Added

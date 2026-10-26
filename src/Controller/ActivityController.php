@@ -9,6 +9,7 @@ use Acencyril\SentinelleBundle\Entity\Visit;
 use Acencyril\SentinelleBundle\Repository\VisitRepository;
 use Acencyril\SentinelleBundle\Service\IpBlocklist;
 use Acencyril\SentinelleBundle\Service\IpIdentifier;
+use Acencyril\SentinelleBundle\Service\Texts;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -17,6 +18,7 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
 /**
@@ -48,6 +50,8 @@ class ActivityController
         private string $role,
         private string $parentTemplate,
         private ?string $backRoute,
+        private ?TranslatorInterface $translator = null,
+        private bool $dryRun = false,
     ) {
     }
 
@@ -83,6 +87,8 @@ class ActivityController
             ),
             'parent_template' => $this->parentTemplate,
             'back_route' => $this->backRoute,
+            'dry_run' => $this->dryRun,
+            't' => Texts::section($this->translator, 'dashboard.', $request->getLocale()),
         ]));
     }
 
@@ -96,21 +102,18 @@ class ActivityController
         $ip = trim($request->request->getString('ip'));
 
         if (!$this->isTokenValid($request)) {
-            $this->flash($request, 'error', 'Invalid token, action cancelled.');
+            $this->flash($request, 'error', 'invalid_token', $ip);
         } elseif (false === filter_var($ip, \FILTER_VALIDATE_IP)) {
-            $this->flash($request, 'error', sprintf('"%s" is not a valid IP address.', $ip));
+            $this->flash($request, 'error', 'invalid_ip', $ip);
         } elseif ($this->blocklist->isAllowed($ip)) {
-            $this->flash($request, 'error', sprintf('%s is allowlisted and cannot be blocked.', $ip));
+            $this->flash($request, 'error', 'allowlisted', $ip);
         } elseif (null === $this->blocklist->block($ip, 'Manual block from the dashboard', BlockedIp::SOURCE_MANUAL)) {
             /* This is where the original incident would repeat. A critical
                provider IP, recognised by reverse DNS: blocking it would break a
                working part of the site. The button refuses, and says why. */
-            $this->flash($request, 'error', sprintf(
-                '%s belongs to a provider the site depends on and cannot be blocked.',
-                $ip
-            ));
+            $this->flash($request, 'error', 'critical', $ip);
         } else {
-            $this->flash($request, 'success', sprintf('%s blocked.', $ip));
+            $this->flash($request, 'success', 'blocked', $ip);
         }
 
         return new RedirectResponse($this->router->generate('sentinelle_activity'));
@@ -122,11 +125,11 @@ class ActivityController
         $ip = trim($request->request->getString('ip'));
 
         if (!$this->isTokenValid($request)) {
-            $this->flash($request, 'error', 'Invalid token, action cancelled.');
+            $this->flash($request, 'error', 'invalid_token', $ip);
         } elseif ($this->blocklist->unblock($ip)) {
-            $this->flash($request, 'success', sprintf('%s unblocked.', $ip));
+            $this->flash($request, 'success', 'unblocked', $ip);
         } else {
-            $this->flash($request, 'error', sprintf('%s was not blocked.', $ip));
+            $this->flash($request, 'error', 'not_blocked', $ip);
         }
 
         return new RedirectResponse($this->router->generate('sentinelle_activity'));
@@ -146,11 +149,12 @@ class ActivityController
         );
     }
 
-    /** Messages go through the session, when there is one. */
-    private function flash(Request $request, string $kind, string $message): void
+    /** Messages go through the session, when there is one, in the dashboard's language. */
+    private function flash(Request $request, string $kind, string $key, string $ip): void
     {
         if ($request->hasSession()) {
-            $request->getSession()->getFlashBag()->add('sentinelle_'.$kind, $message);
+            $texts = Texts::section($this->translator, 'dashboard.flash.', $request->getLocale());
+            $request->getSession()->getFlashBag()->add('sentinelle_'.$kind, strtr($texts[$key], ['%ip%' => $ip]));
         }
     }
 }

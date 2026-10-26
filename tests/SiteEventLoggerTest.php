@@ -66,6 +66,7 @@ final class SiteEventLoggerTest extends TestCase
     {
         $twig = (string) file_get_contents(\dirname(__DIR__).'/templates/activity.html.twig');
         self::assertStringNotContainsString('#1f2937', $twig);
-        self::assertStringContainsString("'ip_blocked': 'currentColor'", $twig);
+        self::assertStringContainsString("'ip_blocked': 'neutral'", $twig);
+        self::assertStringContainsString('.sentinelle .is-neutral { --_tone: var(--_ink); }', $twig);
     }
 }

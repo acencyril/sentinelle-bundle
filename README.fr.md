@@ -307,6 +307,76 @@ laissez-passer accordés sur les dernières 24 heures.
 Le blocage manuel est permanent par défaut : une adresse qu'on bloque à la main
 est un choix délibéré, pas une détection.
 
+En haut, des tuiles pour les dernières 24 heures : adresses bloquées en ce moment,
+requêtes refusées venues d'elles, tentatives d'exploitation, sondages, réponses
+sensibles servies (en rouge dès qu'il y en a une), laissez-passer et pages vues.
+Chaque tuile ouvre le journal filtré sur ce type. La page est en français et en
+anglais (la langue de la requête) ; chaque texte se redéfinit dans vos traductions,
+domaine `sentinelle`, clés `dashboard.*`. Un badge indique si Sentinelle est en mode
+d'essai.
+
+### Dans votre admin
+
+Le tableau de bord étend `access.parent_template`, le gabarit de votre admin, qui
+doit définir les blocs `title` et `body`. Le tableau de bord remplace le contenu de
+`body` : le cadre de votre admin (en-tête, onglets, largeur) doit donc se trouver
+*autour* de ce bloc dans le gabarit, pas dedans. Si votre gabarit de base a un bloc
+qui enveloppe `body`, le gabarit de l'admin redéfinit celui-là :
+
+```twig
+{# templates/admin/layout.html.twig, déclaré en access.parent_template #}
+{% extends 'base.html.twig' %}
+{% block main %}
+  <nav class="admin-tabs">…</nav>
+  <div class="admin-page">{% block body %}{% endblock %}</div>
+{% endblock %}
+```
+
+### L'apparence du tableau de bord
+
+Ni CDN, ni framework, ni couleur en ligne : le tableau de bord est habillé par un
+seul bloc `<style>` dont chaque couleur, police et arrondi est une propriété CSS
+personnalisée. Les valeurs par défaut partent de la couleur du texte de la page
+(`currentColor`) : bordures, rayures, texte secondaire et pastilles d'état en sont
+des mélanges, si bien que le tableau de bord se lit sur une admin claire comme sur
+une sombre, dans votre police, sans savoir quel thème l'entoure. Les couleurs d'état
+sont elles aussi mélangées à la couleur du texte, ce qui les garde lisibles des deux
+côtés.
+
+Pour reprendre votre palette, définissez celles que vous voulez sur votre admin
+(`:root`, `body` ou l'enveloppe de votre gabarit) ; deux lignes suffisent en général :
+
+```css
+:root { --sentinelle-accent: #ff5a1f; --sentinelle-radius: 14px; }
+```
+
+| Propriété | Par défaut | Sert à |
+|---|---|---|
+| `--sentinelle-font` | `inherit` | tout le texte |
+| `--sentinelle-heading-font` | `inherit` | les titres |
+| `--sentinelle-mono` | `ui-monospace, …` | adresses, codes de statut |
+| `--sentinelle-ink` | `currentColor` | le texte |
+| `--sentinelle-muted` | 64 % de la couleur du texte | libellés, indications |
+| `--sentinelle-surface` | 3 % de la couleur du texte | tuiles, cadres des tableaux |
+| `--sentinelle-line` | 13 % de la couleur du texte | bordures, filets |
+| `--sentinelle-stripe` | 3 % de la couleur du texte | en-tête et lignes alternées |
+| `--sentinelle-hover` | 7 % de la couleur du texte | survol, pastilles neutres |
+| `--sentinelle-accent` | `#2563eb` | liens, anneau de focus |
+| `--sentinelle-danger` | `#dc2626` | attaques, réponses sensibles, bloquer |
+| `--sentinelle-warning` | `#d97706` | sondages, accès refusés, mode d'essai |
+| `--sentinelle-success` | `#16a34a` | pages vues, blocage actif |
+| `--sentinelle-info` | `#0891b2` | laissez-passer, blocages manuels |
+| `--sentinelle-violet` | `#7c3aed` | erreurs serveur |
+| `--sentinelle-radius` | `12px` | tuiles, tableaux, messages |
+| `--sentinelle-max-width` | `72rem` | la largeur du tableau de bord |
+
+Sur une admin sombre, donnez aux tons les valeurs plus claires de votre thème (par
+exemple `--sentinelle-danger: #ff6b7a`) si ceux par défaut paraissent trop sourds ;
+le mélange avec la couleur du texte les garde déjà lisibles. Les tableaux défilent
+dans leur propre cadre : sur un téléphone, la page ne défile jamais de côté. Pour
+changer le balisage, surchargez `templates/bundles/SentinelleBundle/activity.html.twig`,
+ou seulement son bloc `sentinelle_content` ou `sentinelle_styles`.
+
 ---
 
 ## Ce qu'il détecte

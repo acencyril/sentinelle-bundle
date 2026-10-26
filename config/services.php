@@ -143,6 +143,8 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             '%sentinelle.access.role%',
             '%sentinelle.access.parent_template%',
             '%sentinelle.access.back_route%',
+            service('translator')->nullOnInvalid(),
+            '%sentinelle.dry_run%',
         ])
         ->tag('controller.service_arguments');
 

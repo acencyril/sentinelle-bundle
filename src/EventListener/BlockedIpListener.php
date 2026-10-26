@@ -5,6 +5,7 @@ namespace Acencyril\SentinelleBundle\EventListener;
 use Acencyril\SentinelleBundle\Service\HumanPass;
 use Acencyril\SentinelleBundle\Service\IpBlocklist;
 use Acencyril\SentinelleBundle\Service\Sensitive;
+use Acencyril\SentinelleBundle\Service\Texts;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Cookie;
@@ -169,15 +170,7 @@ class BlockedIpListener
      */
     private function texts(string $locale): array
     {
-        $file = \dirname(__DIR__, 2).'/translations/sentinelle.'.$locale.'.php';
-        $own = is_file($file) ? require $file : [];
-        $texts = [];
-        foreach ($own as $id => $fallback) {
-            $text = $this->translator?->trans($id, [], 'sentinelle', $locale);
-            $texts[substr($id, \strlen('human_pass.'))] = null === $text || $text === $id ? $fallback : $text;
-        }
-
-        return $texts;
+        return Texts::section($this->translator, 'human_pass.', $locale);
     }
 
     /** Back to where the visitor was, on this site only. */

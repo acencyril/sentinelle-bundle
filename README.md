@@ -295,6 +295,73 @@ DNS provides it. The number of human passes granted in the last 24 hours.
 Manual blocks are permanent by default: an address you block by hand is a
 deliberate decision, not a detection.
 
+At the top, tiles for the last 24 hours: addresses blocked right now, requests
+refused from them, exploitation attempts, probes, sensitive answers served (red
+when there is one), human passes and page views. Each tile opens the log filtered
+on that kind. The page is in English and French (the request's locale); override
+any text in your translations, domain `sentinelle`, keys `dashboard.*`. A badge says
+whether Sentinelle is in dry-run.
+
+### Inside your admin
+
+The dashboard extends `access.parent_template`, your admin layout, which must define
+the `title` and `body` blocks. The dashboard replaces the content of `body`, so your
+admin's frame (header, tabs, page width) must sit *around* that block in the layout,
+not inside it. If your base template has a block wrapping `body`, the admin layout
+redefines that one:
+
+```twig
+{# templates/admin/layout.html.twig, set as access.parent_template #}
+{% extends 'base.html.twig' %}
+{% block main %}
+  <nav class="admin-tabs">…</nav>
+  <div class="admin-page">{% block body %}{% endblock %}</div>
+{% endblock %}
+```
+
+### The dashboard's look
+
+No CDN, no framework, no inline colour: the dashboard is styled by one `<style>`
+block whose every colour, font and radius is a CSS custom property. The defaults are
+derived from the page's own text colour (`currentColor`): borders, stripes, muted
+text and the status pills are mixes of it, so the dashboard reads on a light and on
+a dark admin alike, in your font, without knowing which theme it is in. Status
+colours are mixed with the text colour too, which keeps them legible on both.
+
+To match your palette, set any of these on your admin (`:root`, `body`, or your
+layout's wrapper); two lines are usually enough:
+
+```css
+:root { --sentinelle-accent: #ff5a1f; --sentinelle-radius: 14px; }
+```
+
+| Property | Default | Used for |
+|---|---|---|
+| `--sentinelle-font` | `inherit` | all text |
+| `--sentinelle-heading-font` | `inherit` | headings |
+| `--sentinelle-mono` | `ui-monospace, …` | addresses, status codes |
+| `--sentinelle-ink` | `currentColor` | text |
+| `--sentinelle-muted` | 64 % of the text colour | labels, hints, secondary text |
+| `--sentinelle-surface` | 3 % of the text colour | tiles, table frames |
+| `--sentinelle-line` | 13 % of the text colour | borders, rules |
+| `--sentinelle-stripe` | 3 % of the text colour | table header, zebra rows |
+| `--sentinelle-hover` | 7 % of the text colour | row and tile hover, neutral pills |
+| `--sentinelle-accent` | `#2563eb` | links, focus ring |
+| `--sentinelle-danger` | `#dc2626` | attacks, sensitive answers, block |
+| `--sentinelle-warning` | `#d97706` | probes, access denied, dry-run |
+| `--sentinelle-success` | `#16a34a` | page views, blocking on |
+| `--sentinelle-info` | `#0891b2` | human passes, manual blocks |
+| `--sentinelle-violet` | `#7c3aed` | server errors |
+| `--sentinelle-radius` | `12px` | tiles, tables, flashes |
+| `--sentinelle-max-width` | `72rem` | the dashboard's width |
+
+On a dark admin, give the tones your theme's brighter values (for instance
+`--sentinelle-danger: #ff6b7a`) if the defaults look too deep; the mix with the text
+colour already keeps them readable. Tables scroll inside their own frame, so a phone
+never scrolls the page sideways. To change the markup, override
+`templates/bundles/SentinelleBundle/activity.html.twig`, or only its
+`sentinelle_content` or `sentinelle_styles` block.
+
 ---
 
 ## What it detects

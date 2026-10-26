@@ -47,7 +47,7 @@ class Visit
      * secret in cleartext into a table readable from the admin interface.
      */
     #[ORM\Column(type: 'json', nullable: true)]
-    private array $meta = [];
+    private ?array $meta = [];
 
     #[ORM\Column(type: 'datetime')]
     private \DateTimeInterface $createdAt;
@@ -119,7 +119,8 @@ class Visit
 
     public function getMeta(): array
     {
-        return $this->meta;
+        // The column is nullable: a row written without meta must not break the dashboard.
+        return $this->meta ?? [];
     }
 
     public function setMeta(array $meta): void

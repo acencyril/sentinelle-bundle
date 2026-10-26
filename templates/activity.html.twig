@@ -1,148 +1,346 @@
-{# The parent template comes from configuration: a bundle cannot know how the
-   application installing it dresses its pages. #}
+{#- The dashboard. The parent template comes from configuration (access.parent_template): a
+    bundle cannot know how the application installing it dresses its pages. It must define the
+    "title" and "body" blocks.
+
+    To blend into your admin, map the --sentinelle-* custom properties to your palette (README,
+    "The dashboard's look"); to change the markup, override this file in
+    templates/bundles/SentinelleBundle/activity.html.twig, or only its "sentinelle_content" or
+    "sentinelle_styles" block. Texts: domain "sentinelle", keys dashboard.*. -#}
 {% extends parent_template %}
 
-{% block title %}Site activity{% endblock %}
+{% block title %}{{ t.title }}{% endblock %}
 
 {% block body %}
-  {# "IP blocked" follows the text colour (currentColor): a fixed dark grey was
-     unreadable on dark admin themes. #}
-  {% set colour = {
-    'attack_attempt': '#b91c1c', 'ip_blocked': 'currentColor', 'scan_probe': '#c2410c',
-    'access_denied': '#a16207', 'server_error': '#7c3aed', 'not_found': '#64748b',
-    'client_error': '#64748b', 'page_view': '#059669', 'human_pass': '#0891b2'
-  } %}
-  {% set label = {
-    'attack_attempt': 'exploitation attempt', 'ip_blocked': 'IP blocked', 'human_pass': 'human pass',
-    'scan_probe': 'probe', 'access_denied': 'access denied',
-    'server_error': 'server error', 'not_found': 'not found',
-    'client_error': 'client error', 'page_view': 'page view'
+  {#- Each kind has a tone. Tones are mixed with the text colour, so they stay readable on a light
+      and on a dark page; "neutral" is the text colour itself. -#}
+  {% set tone = {
+    'attack_attempt': 'danger', 'breach_served': 'danger', 'scan_probe': 'warning',
+    'access_denied': 'warning', 'server_error': 'violet', 'human_pass': 'info',
+    'page_view': 'success', 'ip_blocked': 'neutral', 'not_found': 'neutral', 'client_error': 'neutral'
   } %}
 
-  {# The owner's name under each address. Without it the table shows only
-   numbers and you block at random — which is exactly how a critical provider
-   IP was once banned by hand, breaking a working part of the site. #}
-  {% macro who(ip, identities) %}
+  {#- The owner's name under each address. Without it the table shows only numbers and you block
+      at random — which is exactly how a critical provider IP was once banned by hand, breaking a
+      working part of the site. -#}
+  {% macro who(ip, identities, t) %}
     {% set id = identities[ip]|default(null) %}
     {% if id and id.label %}
-      <div style="font-size:.69rem;color:{{ id.critical ? '#b91c1c' : '#6b7280' }}">
-        {{ id.critical ? '⛔ ' }}{{ id.label }}{{ id.critical ? ' — do not block' }}
-      </div>
+      <span class="sn-who{{ id.critical ? ' is-critical' }}">{{ id.critical ? '⛔ ' }}{{ id.label }}{{ id.critical ? ' — ' ~ t['who.do_not_block'] }}</span>
     {% elseif id and id.hostname %}
-      <div style="font-size:.69rem;color:#6b7280">{{ id.hostname }}</div>
+      <span class="sn-who">{{ id.hostname }}</span>
     {% elseif id %}
-      <div style="font-size:.69rem;color:#9ca3af;font-style:italic">unknown (no reverse DNS)</div>
+      <span class="sn-who is-unknown">{{ t['who.unknown'] }}</span>
     {% endif %}
   {% endmacro %}
-  {% import _self as w %}
 
-  <h1>Site activity</h1>
-  {% if back_route %}<p><a href="{{ path(back_route) }}">← back</a></p>{% endif %}
+  {% set label = {} %}
+  {% for kind in tone|keys %}{% set label = label|merge({(kind): t['kind.' ~ kind]}) %}{% endfor %}
+
+<div class="sentinelle" id="sentinelle">
+  {% block sentinelle_styles %}
+  <style>
+    /* Every colour, font and radius is a --sentinelle-* custom property (README, "The dashboard's
+       look"). The defaults derive from the page's own text colour (currentColor), so the dashboard
+       reads on a light and on a dark admin without knowing which one it is in. */
+    .sentinelle {
+      --_font: var(--sentinelle-font, inherit);
+      --_heading-font: var(--sentinelle-heading-font, inherit);
+      --_mono: var(--sentinelle-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+      --_ink: var(--sentinelle-ink, currentColor);
+      --_muted: var(--sentinelle-muted, color-mix(in srgb, currentColor 64%, transparent));
+      --_surface: var(--sentinelle-surface, color-mix(in srgb, currentColor 3%, transparent));
+      --_line: var(--sentinelle-line, color-mix(in srgb, currentColor 13%, transparent));
+      --_stripe: var(--sentinelle-stripe, color-mix(in srgb, currentColor 3%, transparent));
+      --_hover: var(--sentinelle-hover, color-mix(in srgb, currentColor 7%, transparent));
+      --_accent: var(--sentinelle-accent, #2563eb);
+      --_danger: var(--sentinelle-danger, #dc2626);
+      --_warning: var(--sentinelle-warning, #d97706);
+      --_success: var(--sentinelle-success, #16a34a);
+      --_info: var(--sentinelle-info, #0891b2);
+      --_violet: var(--sentinelle-violet, #7c3aed);
+      --_radius: var(--sentinelle-radius, 12px);
+      --_max: var(--sentinelle-max-width, 72rem);
+      box-sizing: border-box; min-width: 0; max-width: var(--_max); margin: 0 auto;
+      font-family: var(--_font); color: var(--_ink); line-height: 1.5;
+    }
+    .sentinelle *, .sentinelle *::before, .sentinelle *::after { box-sizing: inherit; }
+    .sentinelle h1, .sentinelle h2 { font-family: var(--_heading-font); color: var(--_ink); letter-spacing: -.02em; text-wrap: balance; }
+    .sentinelle h1 { font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.4rem); line-height: 1.1; font-weight: 750; margin: 0 0 .35rem; }
+    .sentinelle h2 { font-size: 1.15rem; line-height: 1.3; font-weight: 700; margin: 0 0 .85rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .sentinelle p { margin: 0; }
+    .sentinelle a { color: color-mix(in srgb, var(--_accent) 80%, var(--_ink)); text-underline-offset: 3px; }
+    .sentinelle section { padding: 0; margin: 0 0 2.25rem; }
+    .sentinelle :focus-visible { outline: 2px solid var(--_accent); outline-offset: 2px; }
+
+    .sn-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 1rem 2rem; margin: 0 0 1.75rem; }
+    .sn-head > div { min-width: 0; }
+    .sn-lead, .sn-muted { color: var(--_muted); }
+    .sn-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; font-size: .875rem; }
+    .sn-mode-help { margin-top: .35rem !important; font-size: .85rem; color: var(--_muted); }
+    .sn-count { font-size: .8rem; font-weight: 600; color: var(--_muted); font-variant-numeric: tabular-nums; }
+
+    /* tones */
+    .sentinelle .is-danger { --_tone: var(--_danger); }
+    .sentinelle .is-warning { --_tone: var(--_warning); }
+    .sentinelle .is-success { --_tone: var(--_success); }
+    .sentinelle .is-info { --_tone: var(--_info); }
+    .sentinelle .is-violet { --_tone: var(--_violet); }
+    .sentinelle .is-neutral { --_tone: var(--_ink); }
+
+    /* status pills: tinted background, text mixed with the page's text colour for contrast */
+    .sn-pill { display: inline-flex; align-items: center; gap: .35rem; padding: .15rem .6rem; border-radius: 999px; font-size: .78rem; font-weight: 600; line-height: 1.5; white-space: nowrap; text-decoration: none;
+      --_tone: var(--_ink); background: color-mix(in srgb, var(--_tone) 13%, transparent); color: color-mix(in srgb, var(--_tone) 72%, var(--_ink)); }
+    .sentinelle a.sn-pill { color: color-mix(in srgb, var(--_tone) 72%, var(--_ink)); }
+    .sn-pill.is-neutral { background: var(--_hover); color: var(--_ink); }
+    .sn-pill b { font-variant-numeric: tabular-nums; }
+    .sentinelle a.sn-pill:hover { background: color-mix(in srgb, var(--_tone) 22%, transparent); }
+    .sn-pill[aria-current] { box-shadow: inset 0 0 0 1.5px currentColor; }
+
+    .sn-flash { margin: 0 0 1rem !important; padding: .7rem 1rem; border-radius: var(--_radius); font-size: .92rem; font-weight: 600; --_tone: var(--_ink);
+      background: color-mix(in srgb, var(--_tone) 10%, transparent); color: color-mix(in srgb, var(--_tone) 75%, var(--_ink)); border: 1px solid color-mix(in srgb, var(--_tone) 30%, transparent); }
+
+    /* summary tiles */
+    .sn-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr)); gap: .75rem; margin: 0 0 1rem; padding: 0; list-style: none; }
+    .sn-tile { position: relative; display: flex; flex-direction: column; gap: .15rem; min-width: 0; height: 100%; padding: .85rem 1rem .9rem; border: 1px solid var(--_line); border-radius: var(--_radius);
+      background: var(--_surface); color: var(--_ink); text-decoration: none; --_tone: var(--_ink); transition: border-color .15s, background .15s; }
+    .sentinelle a.sn-tile { color: var(--_ink); }
+    .sentinelle a.sn-tile:hover { border-color: color-mix(in srgb, var(--_tone) 45%, transparent); background: var(--_hover); }
+    .sn-tile-label { font-size: .78rem; font-weight: 600; line-height: 1.3; color: var(--_muted); overflow-wrap: anywhere; }
+    .sn-tile-label::before { content: ""; display: inline-block; width: .5rem; height: .5rem; margin-right: .4rem; border-radius: 50%; background: var(--_tone); vertical-align: .05em; }
+    .sn-tile-value { margin-top: .2rem; font-size: 1.85rem; font-weight: 700; line-height: 1.1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+    .sn-tile-hint { font-size: .74rem; line-height: 1.35; color: var(--_muted); overflow-wrap: anywhere; }
+    .sn-tile.is-alert { border-color: color-mix(in srgb, var(--_tone) 55%, transparent); background: color-mix(in srgb, var(--_tone) 10%, transparent); }
+    .sn-tile.is-alert .sn-tile-value, .sn-tile.is-alert .sn-tile-hint { color: color-mix(in srgb, var(--_tone) 75%, var(--_ink)); }
+    .sn-tile.is-zero .sn-tile-value { color: var(--_muted); }
+    .sn-kinds { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; padding: 0; list-style: none; }
+    .sn-note { margin-top: .75rem !important; font-size: .85rem; color: var(--_muted); }
+
+    /* tables: they scroll inside their own frame, never the page */
+    .sn-scroll { position: relative; max-width: 100%; overflow-x: auto; border: 1px solid var(--_line); border-radius: var(--_radius); background: var(--_surface); -webkit-overflow-scrolling: touch; }
+    .sn-table { width: 100%; border-collapse: collapse; border-spacing: 0; margin: 0; font-size: .875rem; line-height: 1.45; display: table; border: 0; }
+    .sn-table th, .sn-table td { padding: .6rem .9rem; text-align: left; vertical-align: top; border: 0; border-bottom: 1px solid var(--_line); color: inherit; }
+    .sn-table thead th { font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--_muted); white-space: nowrap; background: var(--_stripe); }
+    .sn-table tbody tr:last-child > * { border-bottom: 0; }
+    .sn-table tbody tr:nth-child(even) { background: var(--_stripe); }
+    .sn-table tbody tr:hover { background: var(--_hover); }
+    .sn-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .sn-table .nowrap, .sn-table time { white-space: nowrap; }
+    .sn-table .url { min-width: 14rem; max-width: 28rem; overflow-wrap: anywhere; }
+    .sn-table .agent { min-width: 10rem; max-width: 16rem; font-size: .75rem; color: var(--_muted); overflow-wrap: anywhere; }
+    .sn-table .reason { min-width: 12rem; }
+    .sn-table td:last-child form { margin: 0; }
+    .sn-ip { font-family: var(--_mono); font-size: .82rem; white-space: nowrap; }
+    .sn-who { display: block; margin-top: .1rem; font-size: .72rem; color: var(--_muted); white-space: normal; }
+    .sn-who.is-unknown { font-style: italic; }
+    .sn-who.is-critical { --_tone: var(--_danger); color: color-mix(in srgb, var(--_danger) 75%, var(--_ink)); font-weight: 600; }
+    .sn-detail { display: block; margin-top: .15rem; font-family: var(--_mono); font-size: .72rem; color: var(--_muted); overflow-wrap: anywhere; }
+    .sn-detail.is-danger { color: color-mix(in srgb, var(--_danger) 75%, var(--_ink)); }
+    .sn-status { font-family: var(--_mono); font-size: .82rem; font-variant-numeric: tabular-nums; }
+    .sn-status.is-error { color: color-mix(in srgb, var(--_danger) 75%, var(--_ink)); font-weight: 600; }
+    .sn-empty { padding: 1.25rem .9rem !important; color: var(--_muted); text-align: center !important; }
+
+    .sn-btn { font: inherit; font-size: .8rem; font-weight: 600; line-height: 1.2; padding: .4rem .8rem; border-radius: calc(var(--_radius) * .6); cursor: pointer; white-space: nowrap;
+      color: var(--_ink); background: transparent; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); transition: background .15s, border-color .15s; }
+    .sn-btn:hover { background: var(--_hover); }
+    .sn-btn.is-danger { color: color-mix(in srgb, var(--_danger) 75%, var(--_ink)); border-color: color-mix(in srgb, var(--_danger) 45%, transparent); }
+    .sn-btn.is-danger:hover { background: color-mix(in srgb, var(--_danger) 10%, transparent); }
+
+    .sn-filters { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 .85rem; }
+    .sn-filters a { display: inline-block; padding: .3rem .8rem; border-radius: 999px; border: 1px solid var(--_line); font-size: .82rem; font-weight: 600; text-decoration: none; color: var(--_muted); }
+    .sn-filters a:hover { color: var(--_ink); background: var(--_hover); }
+    .sn-filters a[aria-current] { color: var(--_ink); border-color: currentColor; background: var(--_hover); }
+
+    .sn-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    @media (max-width: 600px) {
+      .sn-head { margin-bottom: 1.25rem; }
+      .sn-tile { padding: .75rem .8rem; }
+      .sn-tile-value { font-size: 1.55rem; }
+      .sn-table th, .sn-table td { padding: .55rem .7rem; }
+    }
+    @media (prefers-reduced-motion: reduce) { .sn-tile, .sn-btn { transition: none; } }
+  </style>
+  {% endblock %}
+
+  {% block sentinelle_content %}
+  {% import _self as w %}
+  <header class="sn-head">
+    <div>
+      <h1>{{ t.title }}</h1>
+      <p class="sn-lead">{{ t.lead }}</p>
+      {% if dry_run %}<p class="sn-mode-help">{{ t.dry_run_help }}</p>{% endif %}
+    </div>
+    <div class="sn-meta">
+      <span class="sn-pill {{ dry_run ? 'is-warning' : 'is-success' }}" title="{{ dry_run ? t.dry_run_help }}">● {{ dry_run ? t.dry_run : t.enforcing }}</span>
+      {% if back_route %}<a href="{{ path(back_route) }}">← {{ t.back }}</a>{% endif %}
+    </div>
+  </header>
 
   {% for message in app.flashes('sentinelle_success') %}
-    <p style="color:#059669">{{ message }}</p>
+    <p class="sn-flash is-success" role="status">{{ message }}</p>
   {% endfor %}
   {% for message in app.flashes('sentinelle_error') %}
-    <p style="color:#b91c1c">{{ message }}</p>
+    <p class="sn-flash is-danger" role="alert">{{ message }}</p>
   {% endfor %}
 
-  <h2>Last 24 hours</h2>
-  <p>
-    {% for kind, total in summary %}
-    <span style="color:{{ colour[kind]|default('#64748b') }}">
-      {{ label[kind]|default(kind) }}: <strong>{{ total }}</strong></span>{{ not loop.last ? ' · ' }}
+  {% set n = summary %}
+  {% set breaches = n.breach_served|default(0) %}
+  <section aria-labelledby="sn-day">
+    <h2 id="sn-day">{{ t.last_24h }}</h2>
+    {% set tiles = [
+      {key: 'blocked', value: blocked|length, tone: 'neutral', href: blocked is empty ? null : '#sn-blocked'},
+      {key: 'refused', value: n.ip_blocked|default(0), tone: 'neutral', kind: 'ip_blocked'},
+      {key: 'attacks', value: n.attack_attempt|default(0), tone: 'danger', kind: 'attack_attempt'},
+      {key: 'probes', value: n.scan_probe|default(0), tone: 'warning', kind: 'scan_probe'},
+      {key: 'breaches', value: breaches, tone: 'danger', kind: 'breach_served', alert: breaches > 0},
+      {key: 'passes', value: n.human_pass|default(0), tone: 'info', kind: 'human_pass'},
+      {key: 'views', value: n.page_view|default(0), tone: 'success', kind: 'page_view'},
+    ] %}
+    <ul class="sn-tiles">
+      {% for tile in tiles %}
+        {% set href = tile.href is defined ? tile.href : (tile.value > 0 ? path('sentinelle_activity', {filter: tile.kind}) ~ '#sn-log' : null) %}
+        {% set hint = tile.key == 'breaches' and tile.value == 0 ? t['tile.breaches_none'] : t['tile.' ~ tile.key ~ '_hint'] %}
+        {% set cls = 'sn-tile is-' ~ tile.tone ~ (tile.alert|default(false) ? ' is-alert') ~ (tile.value == 0 ? ' is-zero') %}
+        {% set inner %}
+            <span class="sn-tile-label">{{ t['tile.' ~ tile.key] }}</span>
+            <span class="sn-tile-value">{{ tile.value|number_format(0, '', ' ') }}</span>
+            <span class="sn-tile-hint">{{ hint }}</span>
+        {% endset %}
+        <li>
+          {% if href %}<a class="{{ cls }}" href="{{ href }}" data-tile="{{ tile.key }}">{{ inner }}</a>{% else %}<div class="{{ cls }}" data-tile="{{ tile.key }}">{{ inner }}</div>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+
+    {% if breaches > 0 %}
+      <p class="sn-flash is-danger" role="alert">{{ t.breach_alert }}</p>
+    {% endif %}
+
+    {% if summary is not empty %}
+      <ul class="sn-kinds" aria-label="{{ t.breakdown }}">
+        {% for kind, total in summary %}
+          <li><a class="sn-pill is-{{ tone[kind]|default('neutral') }}" href="{{ path('sentinelle_activity', {filter: kind}) }}#sn-log"{% if filter == kind %} aria-current="true"{% endif %}>{{ label[kind]|default(kind) }} <b>{{ total }}</b></a></li>
+        {% endfor %}
+      </ul>
     {% else %}
-      <span style="color:#9ca3af">Nothing to report.</span>
-    {% endfor %}
-  </p>
-  {% if summary.human_pass is defined %}
-    {# People behind a blocked address (office, carrier, school) who proved they
-       were browsers and were let through. #}
-    <p style="font-size:.85rem">{{ summary.human_pass }} human pass{{ summary.human_pass > 1 ? 'es' }} granted to browsers behind a blocked address.</p>
-  {% endif %}
+      <p class="sn-muted">{{ t.nothing }}</p>
+    {% endif %}
+    {% if n.human_pass|default(0) > 0 %}<p class="sn-note">{{ t.passes_note }}</p>{% endif %}
+  </section>
 
   {% if blocked is not empty %}
-    <h2>Blocked addresses</h2>
-    <table>
-      <tr><th>address</th><th>source</th><th>reason</th><th>until</th><th>strikes</th><th>hits</th><th></th></tr>
-      {% for e in blocked %}
-        <tr>
-          <td>{{ e.ip }}{{ w.who(e.ip, identities) }}</td>
-          <td>{{ e.source == 'manual' ? 'manual' : 'auto' }}</td>
-          <td>{{ e.reason }}</td>
-          <td>{{ e.isPermanent ? 'permanent' : e.expiresAt|date('Y-m-d H:i') }}</td>
-          <td>{{ e.strikes > 1 ? e.strikes : '—' }}</td>
-          <td>{{ e.hitCount ?: '—' }}</td>
-          <td>
-            <form method="post" action="{{ path('sentinelle_unblock') }}">
-              <input type="hidden" name="_token" value="{{ csrf_token('sentinelle_block') }}">
-              <input type="hidden" name="ip" value="{{ e.ip }}">
-              <button type="submit">unblock</button>
-            </form>
-          </td>
-        </tr>
-      {% endfor %}
-    </table>
+    <section aria-labelledby="sn-blocked">
+      <h2 id="sn-blocked">{{ t['blocked.title'] }} <span class="sn-count">{{ blocked|length }}</span></h2>
+      <div class="sn-scroll" role="region" aria-labelledby="sn-blocked" tabindex="0">
+        <table class="sn-table">
+          <thead><tr>
+            <th scope="col">{{ t['col.address'] }}</th><th scope="col">{{ t['col.source'] }}</th><th scope="col">{{ t['col.reason'] }}</th>
+            <th scope="col">{{ t['col.until'] }}</th><th scope="col" class="num">{{ t['col.strikes'] }}</th><th scope="col" class="num">{{ t['col.hits'] }}</th>
+            <th scope="col"><span class="sn-sr">{{ t['col.action'] }}</span></th>
+          </tr></thead>
+          <tbody>
+          {% for e in blocked %}
+            <tr>
+              <td><span class="sn-ip">{{ e.ip }}</span>{{ w.who(e.ip, identities, t) }}</td>
+              <td><span class="sn-pill {{ e.source == 'manual' ? 'is-info' : 'is-neutral' }}">{{ e.source == 'manual' ? t['source.manual'] : t['source.auto'] }}</span></td>
+              <td class="reason">{{ e.reason }}</td>
+              <td class="nowrap">{% if e.isPermanent %}<span class="sn-pill is-danger">{{ t.permanent }}</span>{% else %}<time datetime="{{ e.expiresAt|date('c') }}">{{ e.expiresAt|date('Y-m-d H:i') }}</time>{% endif %}</td>
+              <td class="num">{{ e.strikes > 1 ? e.strikes : '—' }}</td>
+              <td class="num">{{ e.hitCount ?: '—' }}</td>
+              <td>
+                <form method="post" action="{{ path('sentinelle_unblock') }}">
+                  <input type="hidden" name="_token" value="{{ csrf_token('sentinelle_block') }}">
+                  <input type="hidden" name="ip" value="{{ e.ip }}">
+                  <button class="sn-btn" type="submit">{{ t.unblock }}</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
   {% endif %}
 
   {% if topIps is not empty %}
-    <h2>Most active addresses over 7 days</h2>
-    <table>
-      <tr><th>address</th><th>anomalies</th><th>last</th><th></th></tr>
-      {% for r in topIps %}
-        <tr>
-          <td>{{ r.ip }}{{ w.who(r.ip, identities) }}</td>
-          <td>{{ r.total }}</td>
-          <td>{{ r.last|date('Y-m-d H:i') }}</td>
-          <td>
-            {% if blockedByIp[r.ip] is defined %}
-              <span style="color:#9ca3af">already blocked</span>
-            {% else %}
-              {# Manual blocks are permanent by default: blocking by hand is a
-               deliberate decision, not a detection. #}
-              <form method="post" action="{{ path('sentinelle_block') }}">
-                <input type="hidden" name="_token" value="{{ csrf_token('sentinelle_block') }}">
-                <input type="hidden" name="ip" value="{{ r.ip }}">
-                <button type="submit">block</button>
-              </form>
-            {% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-    </table>
+    <section aria-labelledby="sn-top">
+      <h2 id="sn-top">{{ t['top.title'] }}</h2>
+      <div class="sn-scroll" role="region" aria-labelledby="sn-top" tabindex="0">
+        <table class="sn-table">
+          <thead><tr>
+            <th scope="col">{{ t['col.address'] }}</th><th scope="col" class="num">{{ t['col.anomalies'] }}</th><th scope="col">{{ t['col.last'] }}</th>
+            <th scope="col"><span class="sn-sr">{{ t['col.action'] }}</span></th>
+          </tr></thead>
+          <tbody>
+          {% for r in topIps %}
+            <tr>
+              <td><span class="sn-ip">{{ r.ip }}</span>{{ w.who(r.ip, identities, t) }}</td>
+              <td class="num">{{ r.total }}</td>
+              <td class="nowrap"><time datetime="{{ r.last|date('c') }}">{{ r.last|date('Y-m-d H:i') }}</time></td>
+              <td>
+                {% if blockedByIp[r.ip] is defined %}
+                  <span class="sn-pill is-neutral">{{ t.already_blocked }}</span>
+                {% else %}
+                  {# Manual blocks are permanent by default: blocking by hand is a deliberate
+                     decision, not a detection. #}
+                  <form method="post" action="{{ path('sentinelle_block') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('sentinelle_block') }}">
+                    <input type="hidden" name="ip" value="{{ r.ip }}">
+                    <button class="sn-btn is-danger" type="submit">{{ t.block }}</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
   {% endif %}
 
-  <h2>Log</h2>
-  <p>
-    <a href="{{ path('sentinelle_activity') }}">all</a> ·
-    <a href="{{ path('sentinelle_activity', {filter: 'suspicious'}) }}">anomalies only</a>
-  </p>
-  <table>
-    <tr><th>when</th><th>kind</th><th>address</th><th>url</th><th>status</th><th>agent</th></tr>
-    {% for e in events %}
-      <tr>
-        <td>{{ e.createdAt|date('m-d H:i:s') }}</td>
-        <td style="color:{{ colour[e.eventType]|default('#64748b') }}">{{ label[e.eventType]|default(e.eventType) }}</td>
-        <td>{{ e.ip ?: '—' }}{% if e.ip %}{{ w.who(e.ip, identities) }}{% endif %}</td>
-        <td style="word-break:break-all">
-          {{ e.url }}
-          {# The pattern lives in the query string, which was not displayed.
-           `insert()` only records the path; what triggered the detection lives
-           in `meta`. Two exploitation attempts therefore appeared as two
-           identical "/" rows. An alert must show what was attempted, not just
-           that something happened. #}
-          {% if e.meta.pattern is defined %}
-            <div style="font-size:.69rem;color:#b91c1c">pattern: {{ e.meta.pattern }}</div>
-          {% endif %}
-          {% if e.meta.query is defined %}
-            <div style="font-size:.69rem;color:#9ca3af">?{{ e.meta.query|slice(0, 120) }}</div>
-          {% endif %}
-        </td>
-        <td>{{ e.statusCode ?: '—' }}</td>
-        <td style="font-size:.69rem;color:#9ca3af">{{ e.userAgent|slice(0, 60) }}</td>
-      </tr>
-    {% else %}
-      <tr><td colspan="6">No visits recorded.</td></tr>
-    {% endfor %}
-  </table>
+  <section aria-labelledby="sn-log">
+    <h2 id="sn-log">{{ t['log.title'] }} <span class="sn-count">{{ events|length }}</span></h2>
+    {% set suspicious = filter in ['suspicious', 'anomalies'] %}
+    <nav class="sn-filters" aria-label="{{ t['log.title'] }}">
+      <a href="{{ path('sentinelle_activity') }}#sn-log"{% if filter in ['all', 'tout'] %} aria-current="true"{% endif %}>{{ t['log.all'] }}</a>
+      <a href="{{ path('sentinelle_activity', {filter: 'suspicious'}) }}#sn-log"{% if suspicious %} aria-current="true"{% endif %}>{{ t['log.anomalies'] }}</a>
+      {% if filter not in ['all', 'tout', 'suspicious', 'anomalies'] %}
+        <a href="{{ path('sentinelle_activity', {filter: filter}) }}#sn-log" aria-current="true">{{ t['log.only']|replace({'%kind%': label[filter]|default(filter)}) }}</a>
+      {% endif %}
+    </nav>
+    <div class="sn-scroll" role="region" aria-labelledby="sn-log" tabindex="0">
+      <table class="sn-table">
+        <thead><tr>
+          <th scope="col">{{ t['col.when'] }}</th><th scope="col">{{ t['col.kind'] }}</th><th scope="col">{{ t['col.address'] }}</th>
+          <th scope="col">{{ t['col.url'] }}</th><th scope="col" class="num">{{ t['col.status'] }}</th><th scope="col">{{ t['col.agent'] }}</th>
+        </tr></thead>
+        <tbody>
+        {% for e in events %}
+          <tr>
+            <td class="nowrap"><time datetime="{{ e.createdAt|date('c') }}">{{ e.createdAt|date('m-d H:i:s') }}</time></td>
+            <td><span class="sn-pill is-{{ tone[e.eventType]|default('neutral') }}">{{ label[e.eventType]|default(e.eventType) }}</span></td>
+            <td>{% if e.ip %}<span class="sn-ip">{{ e.ip }}</span>{{ w.who(e.ip, identities, t) }}{% else %}—{% endif %}</td>
+            <td class="url">
+              {{ e.url }}
+              {# The pattern lives in the query string: `insert()` only records the path, what
+                 triggered the detection lives in `meta`. An alert must show what was attempted,
+                 not just that something happened. #}
+              {% if e.meta.pattern is defined %}
+                <span class="sn-detail is-danger">{{ t['log.pattern'] }}: {{ e.meta.pattern }}</span>
+              {% endif %}
+              {% if e.meta.query is defined %}
+                <span class="sn-detail">?{{ e.meta.query|slice(0, 120) }}</span>
+              {% endif %}
+            </td>
+            <td class="num"><span class="sn-status{{ e.statusCode >= 500 ? ' is-error' }}">{{ e.statusCode ?: '—' }}</span></td>
+            <td class="agent" title="{{ e.userAgent }}">{{ e.userAgent|slice(0, 60) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="sn-empty">{{ t['log.empty'] }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endblock %}
+</div>
 {% endblock %}

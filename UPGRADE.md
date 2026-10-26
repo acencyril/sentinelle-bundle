@@ -1,5 +1,13 @@
 # Upgrading
 
+## From 0.5.0 to 0.5.1
+
+Nothing to change. The dashboard has a new look and is translated (English and
+French). If you had styled its old markup (bare `table`, `h2`, inline colours) from
+your admin's stylesheet, remove those rules and map the `--sentinelle-*` properties
+to your palette instead (README, "The dashboard's look"). Its layout must still
+define the `title` and `body` blocks.
+
 ## From 0.4 to 0.5
 
 Nothing to change in your configuration, and no schema change.
