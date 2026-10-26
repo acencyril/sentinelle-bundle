@@ -42,8 +42,13 @@ three 404s are a scan or a dead link.
 **It classifies every request** — page view, not found, access denied, probe,
 exploitation attempt — from the path, the query string and the response code.
 
-**It blocks on its own**, progressively: 24 hours on the first repeat, 7 days on
-the second, permanent on the third. Blocks expire, and that is deliberate.
+**It blocks on its own**, progressively: 24 hours on the first strike, 7 days on
+the second, permanent on the third (configurable).
+
+**It never locks out the people behind a blocked address.** A browser asking for
+a page gets a one-click proof of work instead of a bare refusal, and is let
+through; scripts and sensitive paths stay shut. See
+[The human pass](#the-human-pass-blocked-but-not-locked-out).
 
 **It emails you**, at most once per address per hour.
 
@@ -78,25 +83,83 @@ being deployed must not get the caller banned.
 
 ---
 
+## The human pass: blocked, but not locked out
+
+Blocking is per address, and **an address is not a person**.
+
+**Why blocks go up to permanent.** Most scanning addresses are compromised
+machines or recycled cloud addresses, so the first block is short: 24 hours.
+An address that comes back after that, then again after 7 days, is doing it on
+purpose, and the third block is permanent. That keeps persistent scanners out
+for good, without anyone having to read a log.
+
+**Why that is not enough on its own.** Many people share one public address: a
+company network, a school, a mobile carrier (carrier-grade NAT puts thousands
+of phones behind a handful of addresses). One infected machine among them
+probes your site, the address gets blocked, sometimes for good, and everybody
+behind it is shut out. They did nothing.
+
+**So real browsers get a way through.** A blocked address that asks for a page
+(`GET`, `Accept: text/html`, not a sensitive path) does not get a bare refusal
+but a small 403 page: *"Your network was blocked after suspicious requests"*,
+with one button. The button runs a light proof of work in the browser (a second
+or two of hashing, in plain JavaScript: no third-party captcha, no external
+request, nothing tracked). Solved, the server sets a cookie:
+
+- **signed** (HMAC with `kernel.secret`), **bound to the address**, valid
+  **24 hours**, `HttpOnly`, `SameSite=Lax`;
+- it lets **that browser** through, and only that browser: the address stays
+  blocked for everything else;
+- it **never opens a sensitive path**: `/.env`, `/.git`, keys, dumps and the
+  like stay closed for everyone, pass or not;
+- attempts are rate-limited (10 per 10 minutes per address), each challenge
+  works once, and a pass used for an attack is withdrawn from the whole address,
+  which then stops being offered the challenge.
+
+Scanners do not run the page's script or keep its cookie, so they stay out.
+Every pass is logged (`human_pass`) and counted on the dashboard: if you see
+many, the address is shared and you may want to unblock it.
+
+The page is in English and French (from `Accept-Language`); override the texts
+in your translations, domain `sentinelle`, keys `human_pass.*`, or the whole
+page with `templates/bundles/SentinelleBundle/human_pass.html.twig`. Turn it off
+with `blocking.human_pass: false`: blocked addresses then get a bare 403 again.
+
+---
+
 ## Installation
 
-### 1. Register the bundle
-
-```php
-// config/bundles.php
-return [
-    // …
-    Acencyril\SentinelleBundle\SentinelleBundle::class => ['all' => true],
-];
+```bash
+composer require acencyril/sentinelle-bundle
 ```
 
-### 2. Configure
+The Symfony Flex recipe registers the bundle, creates
+`config/packages/sentinelle.yaml` and `config/routes/sentinelle.yaml`, and adds
+`SENTINELLE_ALERT_EMAIL` and `SENTINELLE_ALLOWLIST` to your `.env`.
+
+> **Without Flex**, register the bundle by hand and create the two files shown
+> below:
+>
+> ```php
+> // config/bundles.php
+> return [
+>     // …
+>     Acencyril\SentinelleBundle\SentinelleBundle::class => ['all' => true],
+> ];
+> ```
+
+> ⚠ **Behind a reverse proxy** (nginx, Traefik, Caddy, a load balancer, a CDN),
+> configure `trusted_proxies` first. See
+> [Behind a reverse proxy](#behind-a-reverse-proxy): without it, every visitor
+> shares the proxy's address.
+
+### 1. Configure
 
 ```yaml
 # config/packages/sentinelle.yaml
 sentinelle:
   # Dry-run: detects, logs and alerts, but blocks nothing. Leave it on for the
-  # first few weeks — see § 6 below.
+  # first few weeks — see § 5 below.
   dry_run: true
 
   alert:
@@ -108,6 +171,12 @@ sentinelle:
     role:            ROLE_ADMIN
     parent_template: 'base.html.twig'
     back_route:      'dashboard'     # or null
+
+  blocking:
+    # Automatic block length by strike; the last value repeats.
+    durations: ['+24 hours', '+7 days', 'permanent']   # the default
+    # The challenge page for browsers behind a blocked address.
+    human_pass: true                                   # the default
 
   never_block:
     # ⚠ FILL THIS IN BEFORE GOING LIVE.
@@ -122,11 +191,7 @@ sentinelle:
     providers: ['.my-signature-provider.com', '.my-cdn.net']
 ```
 
-Inline comments in the source remain in French. They explain *why* each safeguard
-exists, and several come from real incidents — that reasoning is the most
-valuable part of this code.
-
-### 3. Routes
+### 2. Routes
 
 ```yaml
 # config/routes/sentinelle.yaml
@@ -135,7 +200,7 @@ sentinelle:
     type: php
 ```
 
-### 4. Schema
+### 3. Schema
 
 ```bash
 php bin/console doctrine:migrations:diff
@@ -144,7 +209,7 @@ php bin/console doctrine:migrations:migrate
 
 Two tables: `sentinelle_visit` and `sentinelle_blocked_ip`.
 
-### 5. The purge
+### 4. The purge
 
 Without it the table grows forever **and repeat counters never reset**: an
 address blocked six months ago comes back straight at strike two on its first
@@ -154,7 +219,7 @@ scan, earning seven days where it deserved twenty-four hours.
 0 4 * * *  php /path/bin/console sentinelle:purge
 ```
 
-### 6. Start in dry-run
+### 5. Start in dry-run
 
 Sentinelle ships with `dry_run: true` — it detects, logs and alerts, but **blocks
 nothing**. Nobody wires automatic blocking into a production site without knowing
@@ -167,7 +232,7 @@ included.
 > A mechanism you cannot try without risk will not be tried — it will be
 > installed and switched off at the first incident.
 
-### 7. Check it can do its job
+### 6. Check it can do its job
 
 ```bash
 php bin/console sentinelle:check
@@ -180,6 +245,44 @@ fires, and detection is disarmed without anything saying so.
 
 ---
 
+## Behind a reverse proxy
+
+⚠ **Read this if anything sits in front of PHP**: nginx or Caddy in another
+container, Traefik, a load balancer, Cloudflare or another CDN.
+
+Without `trusted_proxies`, Symfony does not believe the `X-Forwarded-For`
+header, so **every request appears to come from the same address: your
+proxy's**. Sentinelle then cannot tell two visitors apart. One scanner, and the
+proxy's address would be blocked, therefore everybody.
+
+Private and loopback ranges are never blocked, precisely so this cannot shut
+your site; but then nothing gets blocked at all, and the dashboard shows one
+address for the whole world. Tell Symfony which proxies to trust:
+
+```yaml
+# config/packages/framework.yaml
+framework:
+    # The proxy's address or range. REMOTE_ADDR is fine when only the proxy can
+    # reach PHP (a Docker network, a unix socket); never use it when PHP is
+    # reachable directly.
+    trusted_proxies: '%env(TRUSTED_PROXIES)%'
+    trusted_headers: ['x-forwarded-for', 'x-forwarded-proto', 'x-forwarded-port', 'x-forwarded-host']
+```
+
+```dotenv
+# .env.local
+TRUSTED_PROXIES=127.0.0.1,REMOTE_ADDR
+```
+
+Behind Cloudflare or another CDN, list its published ranges instead.
+See [How to Configure Symfony to Work behind a Load Balancer or a Reverse Proxy](https://symfony.com/doc/current/deployment/proxies.html).
+
+Sentinelle checks this at runtime: when a request comes from a private or
+loopback address with an `X-Forwarded-For` header and no trusted proxies are
+configured, it logs a warning (once per process).
+
+---
+
 ## The dashboard
 
 `/admin/activity` — prefix and role are configurable.
@@ -187,7 +290,7 @@ fires, and detection is disarmed without anything saying so.
 The request log, filterable down to anomalies only. Blocked addresses with their
 reason, strike count and how many requests they have made since. The most active
 addresses over seven days. And under each one, **its owner's name** when reverse
-DNS provides it.
+DNS provides it. The number of human passes granted in the last 24 hours.
 
 Manual blocks are permanent by default: an address you block by hand is a
 deliberate decision, not a detection.
@@ -223,8 +326,9 @@ the only moment when the status code is known.
 
 The listener runs at priority **300**, ahead of the router (32) and the firewall
 (8). A banned address consumes no route resolution, no session, no database
-query. It gets a bare 403 with no error page: answering a scanner in detail only
-teaches it what it triggered.
+query. A script gets a bare 403 with no error page: answering a scanner in detail
+only teaches it what it triggered. A browser asking for a page gets the
+[human pass](#the-human-pass-blocked-but-not-locked-out) page.
 
 ### The anti-flood quota stops writing, not counting
 
@@ -232,18 +336,6 @@ A 155-request scan in 16 seconds must not produce 155 rows. But the quota blocks
 **only** the insert: the counters keep running. Otherwise the burst threshold of
 15 would never be reached after 5 probes, and the alerting mechanism would
 neutralise itself at the exact moment it becomes useful.
-
----
-
-## Behind a reverse proxy
-
-⚠ Without `trusted_proxies` configured, **every request appears to come from the
-same address** — your proxy's. Automatic blocking then cannot tell two visitors
-apart, and a single scanner would get the gateway banned, therefore everyone.
-
-Private ranges are allowlisted by default, precisely to prevent this from
-happening during development. In production, configure
-`framework.trusted_proxies`.
 
 ---
 
@@ -275,7 +367,12 @@ site that turns everybody away.
 
 ---
 
-## Upgrading from 0.2
+## Upgrading
+
+From 0.4 to 0.5, see [UPGRADE.md](UPGRADE.md): nothing to change, but blocked
+browsers now see a challenge page instead of a bare 403.
+
+### From 0.2
 
 Version 0.3 renamed everything to English — configuration keys, tables, routes
 and the admin path. See [CHANGELOG.md](CHANGELOG.md) for the full mapping.
@@ -285,6 +382,10 @@ and the admin path. See [CHANGELOG.md](CHANGELOG.md) for the full mapping.
 ## Licence
 
 MIT.
+
+## Security
+
+Found a vulnerability? Please report it privately, see [SECURITY.md](SECURITY.md).
 
 ## Contributing
 

@@ -6,6 +6,37 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-26
+
+### Added
+- **Human pass** (`blocking.human_pass`, on by default): a blocked address asking for an HTML
+  page (GET, `Accept: text/html`, not a sensitive path) gets a small 403 page, "Your network was
+  blocked after suspicious requests", with a button that runs a light proof of work in the
+  browser (plain JavaScript, no third-party captcha, no external request). Solved, it sets a
+  signed cookie (HMAC with `kernel.secret`, bound to the address, 24 hours, `HttpOnly`,
+  `SameSite=Lax`) that lets that browser through while the address stays blocked for everything
+  else. Sensitive paths (`.env`, `.git`, keys, dumps…) stay closed even with a pass. Attempts are
+  rate-limited, a challenge works once, and a pass used for an attack is withdrawn from the
+  address. English and French texts (domain `sentinelle`). Passes are logged as `human_pass` and
+  counted on the dashboard. It protects the people behind a shared address (an office, a school,
+  a mobile carrier) blocked because of one infected machine.
+- `blocking.durations`: automatic block length by strike, the last value repeating. The default
+  is unchanged: `['+24 hours', '+7 days', 'permanent']`.
+- A warning in the logs (once per process) when requests come from a private or loopback
+  address with `X-Forwarded-For` but no trusted proxies are configured.
+- `SECURITY.md`: report vulnerabilities privately through GitHub.
+
+### Changed
+- README: install starts with `composer require` (the Flex recipe registers the bundle and
+  creates the configuration); the manual `bundles.php` step is a "Without Flex" note. "Behind a
+  reverse proxy" moved up, with the `trusted_proxies` configuration.
+
+### Fixed
+- Dashboard: the "IP blocked" label was dark grey (#1f2937), unreadable on dark admin themes; it
+  now follows the text colour.
+
+See [UPGRADE.md](UPGRADE.md).
+
 ## [0.4.1] — 2026-10-26
 
 ### Fixed

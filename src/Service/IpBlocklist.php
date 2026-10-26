@@ -19,14 +19,17 @@ use Psr\Log\LoggerInterface;
 class IpBlocklist
 {
     /**
-     * Block duration by strike count. Permanent on the third.
+     * Default block duration by strike count: 24 hours, 7 days, then permanent.
+     * Configurable through `blocking.durations`; the last value repeats.
      *
      * Progressive rather than permanent from the start: most scanning addresses
      * are compromised machines or cloud addresses being constantly reassigned.
      * An address that comes back after 24 hours, then after 7 days, is
-     * deliberate.
+     * deliberate. A permanent block can still catch real people behind a
+     * shared address (an office, a mobile carrier): the human pass lets their
+     * browsers through, see HumanPass.
      */
-    private const TTL_BY_STRIKE = [1 => '+24 hours', 2 => '+7 days'];
+    public const DEFAULT_DURATIONS = ['+24 hours', '+7 days', 'permanent'];
 
     /** Cache key holding the whole list; invalidated on every write. */
     private const CACHE_KEY = 'ip_blocklist_active';
@@ -74,7 +77,50 @@ class IpBlocklist
          * switching it off.
          */
         private bool $dryRun = false,
-    ) {}
+        /** @var string[] Automatic block length by strike; the last one repeats. */
+        private array $durations = self::DEFAULT_DURATIONS,
+    ) {
+        $this->durations = array_values(array_filter(array_map(
+            static fn ($d): ?string => self::normaliseDuration((string) $d),
+            $durations,
+        ))) ?: self::DEFAULT_DURATIONS;
+    }
+
+    /**
+     * "24 hours" or "+24 hours" become "+24 hours", "permanent" stays. Anything
+     * that is not a time in the future is refused (null): "-1 day" or "now"
+     * would block for nothing and look like it worked.
+     */
+    public static function normaliseDuration(string $duration): ?string
+    {
+        $duration = trim($duration);
+        if ('permanent' === strtolower($duration)) {
+            return 'permanent';
+        }
+        if ('' === $duration) {
+            return null;
+        }
+        if (!\in_array($duration[0], ['+', '-'], true)) {
+            $duration = '+'.$duration;
+        }
+        $now = new \DateTimeImmutable();
+        try {
+            $then = $now->modify($duration);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return false !== $then && $then > $now ? $duration : null;
+    }
+
+    /**
+     * What an automatic block on this strike would last: a relative time or
+     * "permanent".
+     */
+    public function durationFor(int $strikes): string
+    {
+        return $this->durations[max(1, min($strikes, \count($this->durations))) - 1];
+    }
 
     /**
      * Should this address be turned away right now?
@@ -134,7 +180,7 @@ class IpBlocklist
                 'ip' => $ip,
                 'reason' => $reason,
                 'source' => $source,
-                'would_have_lasted' => $ttl ?? ($source === BlockedIp::SOURCE_MANUAL ? 'permanent' : '24 hours'),
+                'would_have_lasted' => $ttl ?? ($source === BlockedIp::SOURCE_MANUAL ? 'permanent' : $this->durationFor(1)),
             ]);
 
             return null;
@@ -273,9 +319,9 @@ class IpBlocklist
             return null;
         }
 
-        $interval = self::TTL_BY_STRIKE[$strikes] ?? null;
+        $interval = $this->durationFor($strikes);
 
-        return $interval === null ? null : new \DateTimeImmutable($interval);
+        return 'permanent' === $interval ? null : new \DateTimeImmutable($interval);
     }
 
     /**

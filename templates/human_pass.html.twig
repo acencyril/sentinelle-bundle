@@ -1,0 +1,84 @@
+{# The page a blocked address gets when it asks for an HTML page. Standalone on purpose: it is
+   served before the router and the firewall, so it cannot rely on the application's layout.
+   No external request of any kind: no font, no script, no captcha provider. #}
+<!doctype html>
+<html lang="{{ locale }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{ t.title }}</title>
+<style nonce="{{ nonce }}">
+  :root { color-scheme: light dark; --bg: #f8fafc; --card: #fff; --text: #0f172a; --muted: #475569; --accent: #2563eb; --accent-text: #fff; --border: #e2e8f0; --error: #b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0b1120; --card: #111827; --text: #e5e7eb; --muted: #9ca3af; --accent: #60a5fa; --accent-text: #0b1120; --border: #1f2937; --error: #fca5a5; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--text); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 34rem; width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 28px 24px; }
+  h1 { font-size: 1.3rem; line-height: 1.3; margin: 0 0 12px; }
+  p { margin: 0 0 12px; color: var(--muted); }
+  button { margin-top: 8px; font: inherit; font-weight: 600; padding: 10px 18px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-text); cursor: pointer; }
+  button[disabled] { opacity: .6; cursor: progress; }
+  .status { min-height: 1.5em; margin-top: 12px; font-size: .9rem; }
+  .error { color: var(--error); }
+  code { font-size: .85em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>{{ t.heading }}</h1>
+  <p>{{ t.explain }}</p>
+  {% if allowed %}
+    <p>{{ t.action }}</p>
+    <form method="post" action="{{ action }}" id="sentinelle-pass">
+      <input type="hidden" name="challenge" value="{{ challenge }}">
+      <input type="hidden" name="solution" value="">
+      <input type="hidden" name="return" value="{{ return }}">
+      <button type="submit">{{ t.button }}</button>
+    </form>
+    <noscript><p class="error">{{ t.noscript }}</p></noscript>
+    <p class="status{{ error ? ' error' }}" role="status" aria-live="polite">{{ error ? t.failed }}</p>
+  {% else %}
+    <p class="error">{{ t.too_many }}</p>
+  {% endif %}
+  <p><code>{{ ip }}</code></p>
+</main>
+{% if allowed %}
+<script nonce="{{ nonce }}">
+(function () {
+  var bits = {{ difficulty }}, form = document.getElementById('sentinelle-pass'), status = document.querySelector('.status');
+  var K = [], H = [], i, j, p = 2;
+  for (i = 0; i < 64; p++) { for (j = 2; j * j <= p && p % j; j++); if (j * j > p) { if (i < 8) H[i] = Math.pow(p, 1 / 2) * 4294967296 | 0; K[i++] = Math.pow(p, 1 / 3) * 4294967296 | 0; } }
+  /* First 32 bits of SHA-256 of an ASCII string: all the proof of work needs. */
+  function sha256(s) {
+    var l = s.length, w = [], n = ((l + 8) >> 6) + 1, m = new Array(n * 16).fill(0), h = H.slice(), a, x, y, e, c, t1, t2;
+    for (i = 0; i < l; i++) m[i >> 2] |= s.charCodeAt(i) << (24 - (i % 4) * 8);
+    m[l >> 2] |= 0x80 << (24 - (l % 4) * 8); m[n * 16 - 1] = l * 8;
+    for (i = 0; i < m.length; i += 16) {
+      a = h.slice();
+      for (j = 0; j < 64; j++) {
+        if (j < 16) w[j] = m[i + j];
+        else { x = w[j - 15]; y = w[j - 2]; w[j] = (((x >>> 7 | x << 25) ^ (x >>> 18 | x << 14) ^ x >>> 3) + w[j - 7] + ((y >>> 17 | y << 15) ^ (y >>> 19 | y << 13) ^ y >>> 10) + w[j - 16]) | 0; }
+        e = a[4]; t1 = a[7] + ((e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7)) + ((e & a[5]) ^ (~e & a[6])) + K[j] + w[j];
+        c = a[0]; t2 = ((c >>> 2 | c << 30) ^ (c >>> 13 | c << 19) ^ (c >>> 22 | c << 10)) + ((c & a[1]) ^ (c & a[2]) ^ (a[1] & a[2]));
+        a.pop(); a.unshift((t1 + t2) | 0); a[4] = (a[4] + t1) | 0;
+      }
+      for (j = 0; j < 8; j++) h[j] = (h[j] + a[j]) | 0;
+    }
+    return h[0];
+  }
+  form.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var button = form.querySelector('button'), challenge = form.challenge.value, nonce = 0;
+    button.disabled = true; status.className = 'status'; status.textContent = {{ t.working|json_encode|raw }};
+    (function step() {
+      for (var k = 0; k < 5000; k++, nonce++) {
+        if ((sha256(challenge + nonce) >>> (32 - bits)) === 0) { form.solution.value = String(nonce); form.submit(); return; }
+      }
+      setTimeout(step, 0);
+    })();
+  });
+})();
+</script>
+{% endif %}
+</body>
+</html>

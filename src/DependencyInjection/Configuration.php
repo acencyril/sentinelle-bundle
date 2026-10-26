@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Acencyril\SentinelleBundle\DependencyInjection;
 
+use Acencyril\SentinelleBundle\Service\IpBlocklist;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
@@ -67,6 +68,36 @@ class Configuration implements ConfigurationInterface
             ->info('Dry-run: detects, alerts and logs, but NEVER blocks. '
                 .'Leave it on for the first weeks on a live site — you want to see '
                 .'what the bundle would have shut out before handing it the keys.')
+            ->end()
+
+            ->arrayNode('blocking')
+            ->addDefaultsIfNotSet()
+            ->children()
+            ->arrayNode('durations')
+            ->info('Automatic block length by strike: the first value for strike 1, the second for strike 2, and so on; the last one repeats. '
+                .'Each value is a relative time ("+24 hours", "+7 days") or "permanent".')
+            ->scalarPrototype()->end()
+            ->defaultValue(['+24 hours', '+7 days', 'permanent'])
+            ->requiresAtLeastOneElement()
+            ->validate()
+            ->ifTrue(static function (array $durations): bool {
+                foreach ($durations as $d) {
+                    if (null === IpBlocklist::normaliseDuration((string) $d)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })
+            ->thenInvalid('Each blocking duration must be a relative time in the future ("+24 hours", "+7 days") or "permanent", got %s.')
+            ->end()
+            ->end()
+            ->booleanNode('human_pass')->defaultTrue()
+            ->info('A blocked address asking for an HTML page gets a 403 page with a one-click browser proof-of-work. '
+                .'Solved, it sets a signed cookie bound to the IP (24 h) that lets that browser through. '
+                .'Sensitive paths (.env, .git…) stay closed, and the address stays blocked for everything else.')
+            ->end()
+            ->end()
             ->end()
 
             ->arrayNode('thresholds')

@@ -40,6 +40,10 @@ class SentinelleExtension extends Extension
         if (!$config['breach_watch']) {
             $container->removeDefinition(\Acencyril\SentinelleBundle\EventListener\BreachWatchListener::class);
         }
+        if (!$config['blocking']['human_pass']) {
+            // Every consumer takes it as optional: no service, no challenge page, a bare 403.
+            $container->removeDefinition(\Acencyril\SentinelleBundle\Service\HumanPass::class);
+        }
 
         foreach ([
                      'sentinelle.alert.recipient'        => $config['alert']['recipient'],
@@ -57,6 +61,8 @@ class SentinelleExtension extends Extension
 
                      'sentinelle.thresholds'             => $config['thresholds'],
                      'sentinelle.dry_run'                => $config['dry_run'],
+                     'sentinelle.blocking.durations'     => array_values($config['blocking']['durations']),
+                     'sentinelle.blocking.human_pass'    => $config['blocking']['human_pass'],
 
                      'sentinelle.allowlist'              => $config['never_block']['ips'],
                      'sentinelle.exempt_paths'           => $config['never_block']['paths'],

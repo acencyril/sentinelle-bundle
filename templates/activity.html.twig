@@ -5,13 +5,15 @@
 {% block title %}Site activity{% endblock %}
 
 {% block body %}
+  {# "IP blocked" follows the text colour (currentColor): a fixed dark grey was
+     unreadable on dark admin themes. #}
   {% set colour = {
-    'attack_attempt': '#b91c1c', 'ip_blocked': '#1f2937', 'scan_probe': '#c2410c',
+    'attack_attempt': '#b91c1c', 'ip_blocked': 'currentColor', 'scan_probe': '#c2410c',
     'access_denied': '#a16207', 'server_error': '#7c3aed', 'not_found': '#64748b',
-    'client_error': '#64748b', 'page_view': '#059669'
+    'client_error': '#64748b', 'page_view': '#059669', 'human_pass': '#0891b2'
   } %}
   {% set label = {
-    'attack_attempt': 'exploitation attempt', 'ip_blocked': 'IP blocked',
+    'attack_attempt': 'exploitation attempt', 'ip_blocked': 'IP blocked', 'human_pass': 'human pass',
     'scan_probe': 'probe', 'access_denied': 'access denied',
     'server_error': 'server error', 'not_found': 'not found',
     'client_error': 'client error', 'page_view': 'page view'
@@ -53,6 +55,11 @@
       <span style="color:#9ca3af">Nothing to report.</span>
     {% endfor %}
   </p>
+  {% if summary.human_pass is defined %}
+    {# People behind a blocked address (office, carrier, school) who proved they
+       were browsers and were let through. #}
+    <p style="font-size:.85rem">{{ summary.human_pass }} human pass{{ summary.human_pass > 1 ? 'es' }} granted to browsers behind a blocked address.</p>
+  {% endif %}
 
   {% if blocked is not empty %}
     <h2>Blocked addresses</h2>

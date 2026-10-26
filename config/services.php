@@ -12,6 +12,7 @@ use Acencyril\SentinelleBundle\EventListener\BlockedIpListener;
 use Acencyril\SentinelleBundle\EventListener\SiteActivityListener;
 use Acencyril\SentinelleBundle\Repository\BlockedIpRepository;
 use Acencyril\SentinelleBundle\Repository\VisitRepository;
+use Acencyril\SentinelleBundle\Service\HumanPass;
 use Acencyril\SentinelleBundle\Service\IpBlocklist;
 use Acencyril\SentinelleBundle\Service\IpIdentifier;
 use Acencyril\SentinelleBundle\Service\SecurityAlert;
@@ -42,6 +43,14 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             service(IpIdentifier::class),
             '%sentinelle.allowlist%',
             '%sentinelle.dry_run%',
+            '%sentinelle.blocking.durations%',
+        ]);
+
+    $services->set(HumanPass::class)
+        ->args([
+            '%kernel.secret%',
+            service('cache.app'),
+            service('logger'),
         ]);
 
     $services->set(IpHistory::class)
@@ -74,6 +83,7 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             '%sentinelle.alert.sender%',
             '%sentinelle.alert.site_name%',
             '%kernel.environment%',
+            service(HumanPass::class)->nullOnInvalid(),
         ])
         ->tag('kernel.event_listener', [
             'event' => 'kernel.terminate', 'method' => 'onKernelTerminate', 'priority' => -64,
@@ -92,13 +102,20 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             '%sentinelle.extra_patterns%',
             '%sentinelle.extra_ignored%',
             '%sentinelle.access.prefix%',
+            service(HumanPass::class)->nullOnInvalid(),
         ]);
 
     /* Priority 300, ahead of the router (32) and the firewall (8). A banned
        address must consume no route resolution, no session and no database
        query. Placed later, blocking would cost almost as much as serving. */
     $services->set(BlockedIpListener::class)
-        ->args([service(IpBlocklist::class)])
+        ->args([
+            service(IpBlocklist::class),
+            service(HumanPass::class)->nullOnInvalid(),
+            service('twig'),
+            service('translator')->nullOnInvalid(),
+            service('logger'),
+        ])
         ->tag('kernel.event_listener', [
             'event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 300,
         ]);

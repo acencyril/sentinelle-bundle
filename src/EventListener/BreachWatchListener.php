@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Acencyril\SentinelleBundle\EventListener;
 
+use Acencyril\SentinelleBundle\Service\HumanPass;
 use Acencyril\SentinelleBundle\Service\IpBlocklist;
 use Acencyril\SentinelleBundle\Service\IpHistory;
 use Acencyril\SentinelleBundle\Service\Sensitive;
@@ -40,6 +41,7 @@ final class BreachWatchListener
         private string $sender,
         private string $siteName,
         private string $environment,
+        private ?HumanPass $humanPass = null,
     ) {
     }
 
@@ -74,6 +76,7 @@ final class BreachWatchListener
         $ip = $request->getClientIp() ?? 'unknown';
         $this->events->log('breach_served', $path, $ip, $request->headers->get('User-Agent'), ['method' => $request->getMethod(), 'status' => $status, 'secret' => null !== $leak]);
         $blocked = $this->blocklist->block($ip, 'Probable breach: '.$path, 'auto', '+30 days');
+        $this->humanPass?->revoke($ip);
         $this->logger->critical('Sentinelle: sensitive answer served', ['ip' => $ip, 'path' => $path, 'status' => $status, 'secret' => null !== $leak]);
 
         $item = $this->cache->getItem('sentinelle_breach_'.sha1($ip.$path));

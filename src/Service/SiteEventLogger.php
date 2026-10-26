@@ -97,6 +97,7 @@ class SiteEventLogger
         /** @var string[] */
         private array $extraIgnored = [],
         private string $adminPrefix = '/admin/activity',
+        private ?HumanPass $humanPass = null,
     ) {
         $this->thresholds += [
             'burst' => 15, 'burst_window' => 600,
@@ -159,6 +160,7 @@ class SiteEventLogger
         $alreadyBlocked = $request->attributes->getBoolean(BlockedIpListener::REQUEST_ATTRIBUTE);
 
         $type = match (true) {
+            $request->attributes->getBoolean(HumanPass::GRANTED_ATTRIBUTE) => 'human_pass',
             $alreadyBlocked    => 'ip_blocked',
             $critical !== null => 'attack_attempt',
             $suspicious        => 'scan_probe',
@@ -183,7 +185,7 @@ class SiteEventLogger
         // The quota stops the INSERT only: evaluateAlerts must keep counting,
         // otherwise the burst threshold would never be reached and the alerting
         // mechanism would neutralise itself after five probes.
-        $flooding = $type !== 'page_view' && $critical === null && $this->isFlooding($ip, $type);
+        $flooding = $type !== 'page_view' && $type !== 'human_pass' && $critical === null && $this->isFlooding($ip, $type);
 
         if (!$flooding) {
             $this->insert($type, $path, $status, $ip, $request->headers->get('User-Agent'), $meta);
@@ -279,7 +281,7 @@ class SiteEventLogger
     ): void {
         // Already blocked: nothing to reassess, and above all no counter to
         // increment.
-        if ($type === 'ip_blocked') {
+        if ($type === 'ip_blocked' || $type === 'human_pass') {
             return;
         }
 
@@ -307,6 +309,13 @@ class SiteEventLogger
 
         if ($reason === null) {
             return;
+        }
+
+        // Let through by a human pass, and still attacking: whoever solved the
+        // challenge was not a person reading pages. The pass goes, for every
+        // browser on that address, and the challenge is no longer offered.
+        if ($this->humanPass !== null && $request->attributes->getBoolean(HumanPass::PASSED_ATTRIBUTE)) {
+            $this->humanPass->revoke($ip);
         }
 
         // Blocking follows exactly the thresholds that already triggered the

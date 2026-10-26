@@ -45,9 +45,13 @@ si trois 404 sont un scan ou un lien mort.
 tentative d'exploitation — à partir du chemin, des paramètres et du code de
 réponse.
 
-**Il bloque tout seul**, progressivement : 24 heures à la première récidive, 7
-jours à la deuxième, définitif à la troisième. Les blocages expirent, et c'est
-volontaire.
+**Il bloque tout seul**, progressivement : 24 heures au premier blocage, 7 jours
+au deuxième, définitif au troisième (configurable).
+
+**Il ne ferme jamais la porte aux personnes derrière une adresse bloquée.** Un
+navigateur qui demande une page reçoit une preuve de travail en un clic au lieu
+d'un refus sec, et passe ; les scripts et les chemins sensibles restent fermés.
+Voir [Le laissez-passer](#le-laissez-passer--bloqué-mais-pas-enfermé).
 
 **Il prévient par courriel**, une fois par adresse et par heure au maximum.
 
@@ -81,25 +85,87 @@ le temps qu'une clé arrive ne doit pas faire bannir celui qui l'appelle.
 
 ---
 
+## Le laissez-passer : bloqué, mais pas enfermé
+
+Le blocage se fait par adresse, et **une adresse n'est pas une personne**.
+
+**Pourquoi les blocages vont jusqu'au définitif.** La plupart des adresses qui
+scannent sont des machines compromises ou des adresses cloud recyclées : le
+premier blocage est donc court, 24 heures. Une adresse qui revient ensuite, puis
+encore après 7 jours, le fait exprès, et le troisième blocage est définitif. Les
+scanners obstinés restent dehors pour de bon, sans que personne ait à lire un
+journal.
+
+**Pourquoi cela ne suffit pas.** Beaucoup de gens partagent une même adresse
+publique : un réseau d'entreprise, une école, un opérateur mobile (le CGNAT met
+des milliers de téléphones derrière une poignée d'adresses). Une seule machine
+infectée parmi eux sonde votre site, l'adresse est bloquée, parfois pour de bon,
+et tous ceux qui sont derrière se retrouvent dehors. Ils n'ont rien fait.
+
+**Les vrais navigateurs ont donc un passage.** Une adresse bloquée qui demande
+une page (`GET`, `Accept: text/html`, hors chemin sensible) ne reçoit pas un
+refus sec mais une petite page 403 : *« Votre réseau a été bloqué après des
+requêtes suspectes »*, avec un bouton. Le bouton lance une preuve de travail
+légère dans le navigateur (une ou deux secondes de calcul, en JavaScript simple :
+pas de captcha tiers, aucune requête externe, aucun pistage). Une fois résolue,
+le serveur pose un cookie :
+
+- **signé** (HMAC avec `kernel.secret`), **lié à l'adresse**, valable
+  **24 heures**, `HttpOnly`, `SameSite=Lax` ;
+- il laisse passer **ce navigateur**, et lui seul : l'adresse reste bloquée pour
+  tout le reste ;
+- il **n'ouvre jamais un chemin sensible** : `/.env`, `/.git`, les clés, les
+  dumps et le reste restent fermés pour tout le monde, laissez-passer ou non ;
+- les tentatives sont limitées (10 par 10 minutes et par adresse), chaque défi ne
+  sert qu'une fois, et un laissez-passer utilisé pour attaquer est retiré à toute
+  l'adresse, à qui le défi n'est plus proposé.
+
+Les scanners n'exécutent pas le script de la page et ne gardent pas son cookie :
+ils restent dehors. Chaque laissez-passer est journalisé (`human_pass`) et
+compté sur le tableau de bord : s'il y en a beaucoup, l'adresse est partagée et
+vous voudrez peut-être la débloquer.
+
+La page est en anglais et en français (selon `Accept-Language`) ; les textes se
+redéfinissent dans vos traductions, domaine `sentinelle`, clés `human_pass.*`,
+ou la page entière avec `templates/bundles/SentinelleBundle/human_pass.html.twig`.
+Pour la désactiver : `blocking.human_pass: false`, et les adresses bloquées
+reçoivent de nouveau un 403 sec.
+
+---
+
 ## Installation
 
-### 1. Enregistrer le bundle
-
-```php
-// config/bundles.php
-return [
-    // …
-    Acencyril\SentinelleBundle\SentinelleBundle::class => ['all' => true],
-];
+```bash
+composer require acencyril/sentinelle-bundle
 ```
 
-### 2. Configurer
+La recette Symfony Flex enregistre le bundle, crée
+`config/packages/sentinelle.yaml` et `config/routes/sentinelle.yaml`, et ajoute
+`SENTINELLE_ALERT_EMAIL` et `SENTINELLE_ALLOWLIST` à votre `.env`.
+
+> **Sans Flex**, enregistrez le bundle à la main et créez les deux fichiers
+> ci-dessous :
+>
+> ```php
+> // config/bundles.php
+> return [
+>     // …
+>     Acencyril\SentinelleBundle\SentinelleBundle::class => ['all' => true],
+> ];
+> ```
+
+> ⚠ **Derrière un reverse-proxy** (nginx, Traefik, Caddy, un répartiteur de
+> charge, un CDN), configurez d'abord `trusted_proxies`. Voir
+> [Derrière un reverse-proxy](#derrière-un-reverse-proxy) : sans cela, tous les
+> visiteurs partagent l'adresse du proxy.
+
+### 1. Configurer
 
 ```yaml
 # config/packages/sentinelle.yaml
 sentinelle:
     # Mode d'essai : détecte, journalise et alerte, mais ne bloque rien.
-    # À laisser actif les premières semaines — voir le § 6 plus bas.
+    # À laisser actif les premières semaines — voir le § 5 plus bas.
     dry_run: true
 
     alert:
@@ -111,6 +177,12 @@ sentinelle:
         role:            ROLE_ADMIN
         parent_template: 'base.html.twig'
         back_route:      'tableau_de_bord'   # ou null
+
+    blocking:
+        # Durée du blocage automatique par récidive ; la dernière valeur se répète.
+        durations: ['+24 hours', '+7 days', 'permanent']   # la valeur par défaut
+        # La page de défi pour les navigateurs derrière une adresse bloquée.
+        human_pass: true                                   # la valeur par défaut
 
     never_block:
         # ⚠ À REMPLIR AVANT LA MISE EN PRODUCTION.
@@ -125,11 +197,7 @@ sentinelle:
         providers: ['.mon-prestataire-signature.com', '.mon-cdn.net']
 ```
 
-Les clés sont en anglais depuis la version 0.3 ; les commentaires du code restent
-en français, parce qu'ils expliquent *pourquoi* chaque garde-fou existe et que
-plusieurs viennent d'incidents réels.
-
-### 3. Les routes
+### 2. Les routes
 
 ```yaml
 # config/routes/sentinelle.yaml
@@ -138,7 +206,7 @@ sentinelle:
     type: php
 ```
 
-### 4. Le schéma
+### 3. Le schéma
 
 ```bash
 php bin/console doctrine:migrations:diff
@@ -147,7 +215,7 @@ php bin/console doctrine:migrations:migrate
 
 Deux tables : `sentinelle_visit` et `sentinelle_blocked_ip`.
 
-### 5. La purge
+### 4. La purge
 
 Sans elle, la table grossit sans fin **et les récidives ne se réinitialisent
 jamais** : une adresse bloquée il y a six mois repasse directement en deuxième
@@ -158,7 +226,7 @@ vingt-quatre heures.
 0 4 * * *  php /chemin/bin/console sentinelle:purge
 ```
 
-### 6. Démarrer en mode d'essai
+### 5. Démarrer en mode d'essai
 
 Sentinelle s'installe avec `dry_run: true` — elle détecte, journalise et alerte,
 mais **ne bloque rien**. Personne ne branche un blocage automatique sur un site
@@ -172,7 +240,7 @@ comprise.
 > Un mécanisme qu'on ne peut pas essayer sans risque ne sera pas essayé — il sera
 > installé et désactivé au premier incident.
 
-### 7. Vérifier qu'il peut faire son travail
+### 6. Vérifier qu'il peut faire son travail
 
 ```bash
 php bin/console sentinelle:check
@@ -186,6 +254,46 @@ est désarmée sans que rien ne le signale.
 
 ---
 
+## Derrière un reverse-proxy
+
+⚠ **À lire si quoi que ce soit se trouve devant PHP** : nginx ou Caddy dans un
+autre conteneur, Traefik, un répartiteur de charge, Cloudflare ou un autre CDN.
+
+Sans `trusted_proxies`, Symfony ne croit pas l'en-tête `X-Forwarded-For` : **toutes
+les requêtes semblent venir de la même adresse, celle de votre proxy**.
+Sentinelle ne peut alors plus distinguer deux visiteurs. Un seul scanner, et
+l'adresse du proxy serait bloquée, donc tout le monde.
+
+Les plages privées et locales ne sont jamais bloquées, justement pour que cela
+ne ferme pas votre site ; mais alors plus rien n'est bloqué du tout, et le
+tableau de bord montre une seule adresse pour le monde entier. Dites à Symfony
+quels proxies croire :
+
+```yaml
+# config/packages/framework.yaml
+framework:
+    # L'adresse ou la plage du proxy. REMOTE_ADDR convient quand seul le proxy
+    # peut joindre PHP (un réseau Docker, un socket unix) ; jamais quand PHP
+    # est joignable directement.
+    trusted_proxies: '%env(TRUSTED_PROXIES)%'
+    trusted_headers: ['x-forwarded-for', 'x-forwarded-proto', 'x-forwarded-port', 'x-forwarded-host']
+```
+
+```dotenv
+# .env.local
+TRUSTED_PROXIES=127.0.0.1,REMOTE_ADDR
+```
+
+Derrière Cloudflare ou un autre CDN, listez plutôt ses plages publiées.
+Voir [la documentation Symfony sur les proxies](https://symfony.com/doc/current/deployment/proxies.html).
+
+Sentinelle le vérifie à l'exécution : quand une requête vient d'une adresse
+privée ou locale avec un en-tête `X-Forwarded-For` et qu'aucun proxy de
+confiance n'est configuré, il écrit un avertissement dans les journaux (une fois
+par processus).
+
+---
+
 ## Le tableau de bord
 
 `/admin/activity` — préfixe et rôle configurables.
@@ -193,7 +301,8 @@ est désarmée sans que rien ne le signale.
 Le journal des requêtes, filtrable sur les seules lignes suspectes. Les adresses
 bloquées, avec leur motif, leur nombre de récidives et le décompte des requêtes
 refusées depuis. Les adresses les plus actives sur sept jours. Et sous chacune,
-**le nom de son propriétaire** quand le DNS inverse le donne.
+**le nom de son propriétaire** quand le DNS inverse le donne. Le nombre de
+laissez-passer accordés sur les dernières 24 heures.
 
 Le blocage manuel est permanent par défaut : une adresse qu'on bloque à la main
 est un choix délibéré, pas une détection.
@@ -231,8 +340,10 @@ seul moment où le code HTTP est connu.
 
 L'écouteur est branché en priorité **300**, avant le routeur (32) et le pare-feu
 (8). Une adresse bannie ne consomme ni résolution de route, ni session, ni
-requête en base. Elle reçoit un 403 nu, sans page d'erreur : répondre en détail à
-un scanner lui apprend seulement ce qu'il a déclenché.
+requête en base. Un script reçoit un 403 nu, sans page d'erreur : répondre en
+détail à un scanner lui apprend seulement ce qu'il a déclenché. Un navigateur qui
+demande une page reçoit la page du
+[laissez-passer](#le-laissez-passer--bloqué-mais-pas-enfermé).
 
 ### Le quota anti-flood coupe l'écriture, pas le comptage
 
@@ -240,19 +351,6 @@ Un scan de 155 requêtes en 16 secondes ne doit pas produire 155 lignes. Mais le
 quota ne bloque **que** l'insertion : les compteurs continuent. Sinon le seuil de
 rafale, fixé à 15, ne serait jamais atteint après 5 sondes, et le mécanisme
 d'alerte s'auto-neutraliserait au moment précis où il devient utile.
-
----
-
-## Derrière un reverse-proxy
-
-⚠ Sans `trusted_proxies` configuré, **toutes les requêtes semblent venir de la
-même adresse** — celle de votre proxy. Le blocage automatique ne peut alors plus
-distinguer deux visiteurs, et un seul scanner ferait bannir la passerelle, donc
-tout le monde.
-
-Les plages privées sont en liste blanche d'office, précisément pour que cela
-n'arrive pas en développement. En production, renseignez
-`framework.trusted_proxies`.
 
 ---
 
@@ -285,7 +383,12 @@ grave qu'un site qui refuse tout le monde.
 
 ---
 
-## Migrer depuis la 0.2
+## Mettre à jour
+
+De la 0.4 à la 0.5, voir [UPGRADE.md](UPGRADE.md) : rien à changer, mais les
+navigateurs bloqués voient désormais une page de défi au lieu d'un 403 sec.
+
+### Depuis la 0.2
 
 La version 0.3 a tout renommé en anglais — clés de configuration, tables, routes
 et chemin d'administration. La correspondance complète est dans
@@ -296,6 +399,10 @@ et chemin d'administration. La correspondance complète est dans
 ## Licence
 
 MIT.
+
+## Sécurité
+
+Une vulnérabilité ? Signalez-la en privé, voir [SECURITY.md](SECURITY.md).
 
 ## Contribuer
 
