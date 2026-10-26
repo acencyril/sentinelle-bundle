@@ -8,9 +8,18 @@ jobs:
   phpunit:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { php: '8.3', symfony: '' }
+          - { php: '8.4', symfony: '8.*' }
+    name: PHP ${{ matrix.php }}${{ matrix.symfony && format(' / Symfony {0}', matrix.symfony) || '' }}
+    env:
+      SYMFONY_REQUIRE: ${{ matrix.symfony }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
-        with: { php-version: '8.3', coverage: none, tools: composer }
-      - run: composer install --no-interaction --no-progress --prefer-dist
+        with: { php-version: '${{ matrix.php }}', coverage: none, tools: 'composer, flex' }
+      - run: composer update --no-interaction --no-progress --prefer-dist
       - run: vendor/bin/phpunit

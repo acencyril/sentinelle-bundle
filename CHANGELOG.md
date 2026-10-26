@@ -6,6 +6,11 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-10-26
+
+### Fixed
+- Installs on Symfony 8: DoctrineBundle 3 is allowed (`^2.11 || ^3.0`).
+
 ## [0.4.0] — 2026-10-24
 
 ### Added
