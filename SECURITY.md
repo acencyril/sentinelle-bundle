@@ -6,8 +6,8 @@ Only the latest minor version receives security fixes.
 
 | Version | Supported |
 |---------|-----------|
-| 0.5.x   | ✅        |
-| < 0.5   | ❌        |
+| 0.7.x   | ✅        |
+| < 0.7   | ❌        |
 
 ## Reporting a vulnerability
 
@@ -18,10 +18,13 @@ and click **Report a vulnerability**
 (<https://github.com/acencyril/sentinelle-bundle/security/advisories/new>).
 
 Include what you can: the affected version, the configuration, the steps to
-reproduce, and what an attacker gains. You will get an answer within a few days.
+reproduce, and what an attacker gains. You will get an answer within 72 hours.
 Once a fix is released, the advisory is published with credit to you, unless
 you prefer otherwise.
 
 Ways around Sentinelle's own protections (getting a blocked address through,
 reaching a sensitive path with a human pass, forging or replaying a pass,
 blocking a protected provider) are in scope.
+
+The disclosure policy for this bundle and for the sites that run it:
+<https://mirelabs.fr/en/responsible-disclosure>.
