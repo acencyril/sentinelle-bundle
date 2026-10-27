@@ -58,6 +58,11 @@ sensible ou un secret réellement servi avec un 2xx. Toutes les autres alertes
 (scans, tentatives d'exploitation, force brute) sont comptées dans un seul
 récapitulatif quotidien. Voir [Quand il vous écrit](#quand-il-vous-écrit).
 
+**Il dit aux chercheurs où écrire** : `/.well-known/security.txt` (RFC 9116),
+dont la date d'expiration se tient à jour toute seule. Et il envoie votre
+Content-Security-Policy avec un nonce neuf à chaque page. Voir
+[security.txt et Content-Security-Policy](#securitytxt-et-content-security-policy).
+
 **Et il refuse de bloquer ce dont vous dépendez.** C'est la pièce qui manque
 partout ailleurs, et celle qui justifie ce bundle.
 
@@ -356,6 +361,76 @@ Sentinelle le vérifie à l'exécution : quand une requête vient d'une adresse
 privée ou locale avec un en-tête `X-Forwarded-For` et qu'aucun proxy de
 confiance n'est configuré, il écrit un avertissement dans les journaux (une fois
 par processus).
+
+---
+
+## security.txt et Content-Security-Policy
+
+Deux choses qu'un visiteur soucieux de sécurité vérifie dans la première
+minute ; les deux sont éteintes tant que vous ne les configurez pas.
+
+### security.txt
+
+```yaml
+# config/packages/sentinelle.yaml
+sentinelle:
+  security_txt:
+    contact: 'mailto:security@example.com'   # ou une URL https ; une liste convient
+    preferred_languages: [fr, en]
+    policy: '/fr/securite'                   # un chemin, ou une URL absolue
+    # expires: '+11 months'                  # la valeur par défaut
+    # canonical: []                          # par défaut : l'adresse demandée
+    # encryption: 'https://example.com/pgp.asc'
+    # acknowledgments: '/fr/merci'
+    # hiring: 'https://example.com/jobs'
+    # redirect_legacy: true                  # /security.txt -> 301
+```
+
+**Expires est calculé, jamais écrit en dur** : minuit UTC aujourd'hui plus
+`expires`, donc toujours dans le futur et à moins d'un an, comme le demande la
+RFC. La date d'un fichier statique est le champ que tout le monde oublie, et un
+security.txt expiré fait penser au chercheur que l'adresse est morte elle aussi.
+
+**Il répond avant le routeur et avant le blocage d'IP** : aucune route à
+importer, aucun préfixe de langue sur le chemin, et quelqu'un qui sondait votre
+site il y a une minute peut encore savoir où signaler ce qu'il a trouvé.
+
+Les chemins (`/fr/securite`) deviennent absolus sur l'hôte demandé : une seule
+configuration pour tous les environnements. La signature OpenPGP n'est pas
+prise en charge : la RFC la rend facultative, et signer un fichier régénéré
+chaque jour demanderait la clé sur le serveur.
+
+### Content-Security-Policy avec nonce
+
+```yaml
+sentinelle:
+  csp:
+    policy: >-
+      default-src 'self'; script-src 'self' {nonce}; style-src 'self' 'unsafe-inline';
+      img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self';
+      frame-ancestors 'none'; upgrade-insecure-requests
+    # report_only: "…"   # une politique plus stricte à essayer d'abord, en Report-Only
+```
+
+```twig
+<script nonce="{{ csp_nonce() }}">…</script>
+```
+
+`{nonce}` devient `'nonce-…'`, une valeur aléatoire qui change à chaque page et
+que `csp_nonce()` imprime dans la même page. Seuls les scripts marqués par vos
+gabarits s'exécutent ; un `<script>` injecté, non, faute de connaître la valeur.
+C'est tout l'intérêt d'une CSP, et ce que `'unsafe-inline'` abandonne.
+
+- La politique est ajoutée à toute réponse principale qui **n'en a pas** : un
+  contrôleur qui pose la sienne (un téléchargement, un widget intégrable, le
+  laissez-passer de Sentinelle) la garde.
+- `csp_nonce()` existe même sans politique : les gabarits peuvent porter leurs
+  nonces avant que vous l'activiez.
+- Les gestionnaires en ligne (`onclick="…"`) ne sont pas couverts par un nonce :
+  passez-les dans un script (`addEventListener`) avant d'appliquer la politique.
+- Les en-têtes qui ne changent jamais (HSTS, `X-Content-Type-Options`,
+  `Referrer-Policy`…) vont dans votre serveur web, où ils couvrent aussi les
+  fichiers statiques que PHP ne voit pas.
 
 ---
 

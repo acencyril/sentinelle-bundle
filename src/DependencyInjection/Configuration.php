@@ -6,6 +6,7 @@ namespace Acencyril\SentinelleBundle\DependencyInjection;
 
 use Acencyril\SentinelleBundle\Service\IpBlocklist;
 use Acencyril\SentinelleBundle\Service\SecurityAlert;
+use Acencyril\SentinelleBundle\Service\SecurityTxt;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
@@ -157,6 +158,66 @@ class Configuration implements ConfigurationInterface
             ->scalarPrototype()->end()
             ->defaultValue([])
             ->info("Prefixes never logged, in addition to the bundle's own.")
+            ->end()
+
+            ->arrayNode('security_txt')
+            ->info('Serves /.well-known/security.txt (RFC 9116): where to report a vulnerability. '
+                .'Expires is recomputed every day, so the file never goes stale.')
+            ->canBeEnabled()
+            ->children()
+            ->arrayNode('contact')
+            ->info('"mailto:security@example.com" or an https URL; at least one.')
+            ->beforeNormalization()->castToArray()->end()
+            ->scalarPrototype()->end()
+            ->end()
+            ->scalarNode('expires')->defaultValue('+11 months')
+            ->info('How far ahead Expires is, from today (midnight UTC). The RFC wants less than a year.')
+            ->validate()
+            ->ifTrue(static fn ($v): bool => !\is_string($v) || !SecurityTxt::isValidInterval($v))
+            ->thenInvalid('security_txt.expires must be a relative time in the future, at most a year ("+11 months"), got %s.')
+            ->end()
+            ->end()
+            ->arrayNode('preferred_languages')
+            ->beforeNormalization()->castToArray()->end()
+            ->scalarPrototype()->end()
+            ->end()
+            ->scalarNode('policy')->defaultNull()
+            ->info('Your disclosure policy: an absolute URL, or a path ("/en/security") made absolute against the host asked.')
+            ->end()
+            ->arrayNode('canonical')
+            ->info('Default: the security.txt address on the host asked.')
+            ->beforeNormalization()->castToArray()->end()
+            ->scalarPrototype()->end()
+            ->end()
+            ->arrayNode('encryption')
+            ->info('URL of your OpenPGP key, if you want encrypted reports.')
+            ->beforeNormalization()->castToArray()->end()
+            ->scalarPrototype()->end()
+            ->end()
+            ->scalarNode('acknowledgments')->defaultNull()->end()
+            ->scalarNode('hiring')->defaultNull()->end()
+            ->booleanNode('redirect_legacy')->defaultTrue()
+            ->info('/security.txt answers a 301 to /.well-known/security.txt.')
+            ->end()
+            ->end()
+            ->validate()
+            ->ifTrue(static fn (array $v): bool => $v['enabled'] && [] === $v['contact'])
+            ->thenInvalid('security_txt needs at least one contact ("mailto:security@example.com").')
+            ->end()
+            ->end()
+
+            ->arrayNode('csp')
+            ->info('Sends a Content-Security-Policy on every page that has none. {nonce} becomes '
+                ."'nonce-…', the value csp_nonce() prints in your templates: <script nonce=\"{{ csp_nonce() }}\">.")
+            ->addDefaultsIfNotSet()
+            ->children()
+            ->scalarNode('policy')->defaultNull()
+            ->info("e.g. \"default-src 'self'; script-src 'self' {nonce}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'\"")
+            ->end()
+            ->scalarNode('report_only')->defaultNull()
+            ->info('A second policy sent as Content-Security-Policy-Report-Only: try a stricter one before enforcing it.')
+            ->end()
+            ->end()
             ->end()
             ->end();
 

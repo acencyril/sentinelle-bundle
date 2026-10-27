@@ -55,6 +55,11 @@ actually served with a 2xx. Every other alert (scans, exploitation attempts,
 brute force) is counted in one daily digest. See
 [When it emails you](#when-it-emails-you).
 
+**It tells researchers where to write**: `/.well-known/security.txt` (RFC 9116),
+its expiry date kept fresh by itself. And it sends your Content-Security-Policy
+with a fresh nonce on every page. See
+[security.txt and Content-Security-Policy](#securitytxt-and-content-security-policy).
+
 **And it refuses to block what you depend on.** This is the piece missing
 everywhere else, and the one that justifies this bundle.
 
@@ -343,6 +348,84 @@ See [How to Configure Symfony to Work behind a Load Balancer or a Reverse Proxy]
 Sentinelle checks this at runtime: when a request comes from a private or
 loopback address with an `X-Forwarded-For` header and no trusted proxies are
 configured, it logs a warning (once per process).
+
+---
+
+## security.txt and Content-Security-Policy
+
+Two things a security-minded visitor checks in the first minute, and both
+are off until you configure them.
+
+### security.txt
+
+```yaml
+# config/packages/sentinelle.yaml
+sentinelle:
+  security_txt:
+    contact: 'mailto:security@example.com'   # or an https URL; a list is fine
+    preferred_languages: [en, fr]
+    policy: '/en/security'                   # a path, or an absolute URL
+    # expires: '+11 months'                  # the default
+    # canonical: []                          # default: the address asked
+    # encryption: 'https://example.com/pgp.asc'
+    # acknowledgments: '/en/thanks'
+    # hiring: 'https://example.com/jobs'
+    # redirect_legacy: true                  # /security.txt -> 301
+```
+
+```
+Contact: mailto:security@example.com
+Expires: 2027-09-27T00:00:00Z
+Preferred-Languages: en, fr
+Canonical: https://example.com/.well-known/security.txt
+Policy: https://example.com/en/security
+```
+
+**Expires is computed, never written down.** It is midnight UTC today plus
+`expires`, so it is always in the future and under a year away, as the RFC
+asks. A static file's expiry is the field everyone forgets, and an expired
+security.txt tells a researcher the address in it is probably dead too.
+
+**It is answered before the router and before the IP block**: no route to
+import, no locale prefix in the way, and someone who was probing your site a
+minute ago can still find out where to report what they found.
+
+Paths (`/en/security`) are made absolute against the host asked, so one
+configuration serves every environment. Signing the file (OpenPGP) is not
+supported: the RFC makes it optional, and a signature over a file regenerated
+every day would need the key on the server.
+
+### Content-Security-Policy with a nonce
+
+```yaml
+sentinelle:
+  csp:
+    policy: >-
+      default-src 'self'; script-src 'self' {nonce}; style-src 'self' 'unsafe-inline';
+      img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self';
+      frame-ancestors 'none'; upgrade-insecure-requests
+    # report_only: "…"   # a stricter policy to try first, sent as Report-Only
+```
+
+```twig
+<script nonce="{{ csp_nonce() }}">…</script>
+```
+
+`{nonce}` becomes `'nonce-…'`, a random value that changes on every page and
+that `csp_nonce()` prints in the same page. Only the scripts your templates
+marked run; an injected `<script>` does not, because it cannot guess the value.
+That is the whole point of a CSP, and what `'unsafe-inline'` gives away.
+
+- The policy is added to every main response that **has none**: a controller
+  that sets its own (a file download, an embeddable widget, Sentinelle's human
+  pass) keeps it.
+- `csp_nonce()` exists even without a policy, so templates can carry their
+  nonces before you switch the policy on.
+- Inline event handlers (`onclick="…"`) are not covered by a nonce: move them
+  to a script (`addEventListener`) before enforcing.
+- Headers that never change (HSTS, `X-Content-Type-Options`,
+  `Referrer-Policy`…) belong in your web server, where they also cover the
+  static files PHP never sees.
 
 ---
 

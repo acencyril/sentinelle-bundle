@@ -4,7 +4,13 @@ declare(strict_types=1);
 
 namespace Acencyril\SentinelleBundle\DependencyInjection;
 
+use Acencyril\SentinelleBundle\EventListener\ContentSecurityPolicyListener;
+use Acencyril\SentinelleBundle\EventListener\SecurityTxtListener;
+use Acencyril\SentinelleBundle\Service\CspNonce;
+use Acencyril\SentinelleBundle\Service\SecurityTxt;
+use Acencyril\SentinelleBundle\Twig\CspExtension;
 use Symfony\Component\Config\FileLocator;
+use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
@@ -45,8 +51,11 @@ class SentinelleExtension extends Extension
             $container->removeDefinition(\Acencyril\SentinelleBundle\Service\HumanPass::class);
         }
 
+        $this->registerSecurityTxt($config['security_txt'], $container);
+        $this->registerCsp($config['csp'], $container);
+
         foreach ([
-                     'sentinelle.alert.recipient'        => $config['alert']['recipient'],
+                     'sentinelle.alert.recipient'      => $config['alert']['recipient'],
                      'sentinelle.alert.sender'           => $config['alert']['sender'],
                      'sentinelle.alert.sender_name'      => $config['alert']['sender_name'],
                      'sentinelle.alert.site_name'        => $config['alert']['site_name'],
@@ -75,6 +84,46 @@ class SentinelleExtension extends Extension
                  ] as $name => $value) {
             $container->setParameter($name, $value);
         }
+    }
+
+    /** @param array<string, mixed> $c */
+    private function registerSecurityTxt(array $c, ContainerBuilder $container): void
+    {
+        if (!$c['enabled']) {
+            return;
+        }
+        $container->register(SecurityTxt::class, SecurityTxt::class)->setArguments([
+            array_values($c['contact']),
+            $c['expires'],
+            array_values($c['preferred_languages']),
+            $c['policy'],
+            array_values($c['canonical']),
+            array_values($c['encryption']),
+            $c['acknowledgments'],
+            $c['hiring'],
+        ]);
+        /* Ahead of the IP block (300): whoever reports a flaw may have been probing a minute ago. */
+        $container->register(SecurityTxtListener::class, SecurityTxtListener::class)
+            ->setArguments([new Reference(SecurityTxt::class), $c['redirect_legacy']])
+            ->addTag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 310]);
+    }
+
+    /** @param array{policy: ?string, report_only: ?string} $c */
+    private function registerCsp(array $c, ContainerBuilder $container): void
+    {
+        /* The nonce and csp_nonce() always exist, so a template can carry nonce="…" before
+           the policy is switched on, and keeps working if it is switched off. */
+        $container->register(CspNonce::class, CspNonce::class)->setArguments([new Reference('request_stack')]);
+        $container->register(CspExtension::class, CspExtension::class)
+            ->setArguments([new Reference(CspNonce::class)])
+            ->addTag('twig.extension');
+        if (null === $c['policy'] && null === $c['report_only']) {
+            return;
+        }
+        /* Late (-64): after the controllers and listeners that set a policy of their own. */
+        $container->register(ContentSecurityPolicyListener::class, ContentSecurityPolicyListener::class)
+            ->setArguments([new Reference(CspNonce::class), $c['policy'], $c['report_only']])
+            ->addTag('kernel.event_listener', ['event' => 'kernel.response', 'method' => 'onKernelResponse', 'priority' => -64]);
     }
 
     public function getAlias(): string

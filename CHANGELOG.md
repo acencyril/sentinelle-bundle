@@ -6,6 +6,20 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-10-27
+
+### Added
+- **security.txt (RFC 9116).** New `security_txt` section: `contact` (required), `expires`
+  (default `+11 months`), `preferred_languages`, `policy`, `canonical`, `encryption`,
+  `acknowledgments`, `hiring`, `redirect_legacy`. Served at `/.well-known/security.txt` before
+  routing and before the IP block; Expires is recomputed from today, so the file never goes
+  stale; paths are made absolute against the host asked; `/security.txt` redirects to it. Off
+  until configured.
+- **Content-Security-Policy with a nonce.** New `csp.policy` and `csp.report_only`: sent on
+  every main response that has no policy of its own, with `{nonce}` replaced by this page's
+  `'nonce-…'`. New Twig function `csp_nonce()` for `<script nonce="{{ csp_nonce() }}">`,
+  available even without a policy. Off until configured.
+
 ## [0.6.0] — 2026-10-27
 
 ### Changed
