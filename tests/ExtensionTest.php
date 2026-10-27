@@ -57,4 +57,15 @@ final class ExtensionTest extends TestCase
         $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
         (new SentinelleExtension())->load([['alert' => ['recipient' => 'me@example.com', 'immediate' => ['breach', 'login']]]], new ContainerBuilder());
     }
+
+    public function testTheEmailsFollowTheAppLocaleUnlessSet(): void
+    {
+        self::assertSame('%kernel.default_locale%', self::load([])->getParameter('sentinelle.mail.locale'));
+        $container = self::load(['mail' => ['locale' => 'fr']]);
+        self::assertSame('fr', $container->getParameter('sentinelle.mail.locale'));
+        self::assertSame('%sentinelle.mail.locale%', $container->getDefinition(\Acencyril\SentinelleBundle\Service\Mail::class)->getArgument(1));
+        foreach ([\Acencyril\SentinelleBundle\Service\SecurityAlert::class => 10, \Acencyril\SentinelleBundle\EventListener\BreachWatchListener::class => 12, \Acencyril\SentinelleBundle\Command\DigestCommand::class => 6] as $class => $i) {
+            self::assertSame(\Acencyril\SentinelleBundle\Service\Mail::class, (string) $container->getDefinition($class)->getArgument($i));
+        }
+    }
 }

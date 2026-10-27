@@ -63,6 +63,7 @@ class SentinelleExtension extends Extension
                      'sentinelle.alert.quiet_when_blocked' => $config['alert']['quiet_when_blocked'],
                      'sentinelle.alert.immediate'        => array_values(array_unique($config['alert']['immediate'])),
                      'sentinelle.breach_watch'           => $config['breach_watch'],
+                     'sentinelle.mail.locale'            => $config['mail']['locale'] ?? '%kernel.default_locale%',
 
                      'sentinelle.access.role'            => $config['access']['role'],
                      'sentinelle.access.prefix'          => $config['access']['prefix'],

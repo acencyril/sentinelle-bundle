@@ -37,6 +37,8 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * once; by default only `breach`, a sensitive address actually answered with a 2xx. The others
  * are recorded (an `alert` row) and counted in the daily digest. An email for every scanner
  * trains you to ignore Sentinelle's emails, and then you miss the one that says it got through.
+ *
+ * Since 0.7.1: in the language of `mail.locale` (en, fr), laid out by Mail.
  */
 class SecurityAlert
 {
@@ -62,6 +64,7 @@ class SecurityAlert
         private bool $quietWhenBlocked = true,
         /** @var list<string> kinds emailed at once; the others wait for the digest */
         private array $immediate = self::IMMEDIATE_DEFAULT,
+        private Mail $mail = new Mail(),
     ) {
     }
 
@@ -95,7 +98,6 @@ class SecurityAlert
         if (!$this->isImmediate($kind) && !$this->isImmediate('breach')) {
             return false;
         }
-        $esc = static fn (?string $v): string => htmlspecialchars((string) ($v ?? '—'), \ENT_QUOTES, 'UTF-8');
         $history = $this->history?->of($context['ip']) ?? [];
         $served = IpHistory::served($history);
         if (!$this->isImmediate($served ? 'breach' : $kind)) {
@@ -105,67 +107,55 @@ class SecurityAlert
             return false;
         }
 
+        $m = $this->mail;
+        $esc = Mail::esc(...);
+        $kindLabel = $m->t('kind.'.$kind);
         $rows = [
-            'Pattern' => $esc($context['detail'] ?? null),
-            'IP' => $esc($context['ip']),
-            'Request' => $esc($context['method'].' '.$context['path']),
-            'Query' => $esc($context['query'] ?? null),
-            'Response' => $esc((string) $context['status']),
-            'User agent' => $esc($context['user_agent'] ?? null),
-            'Date' => $esc((new \DateTimeImmutable())->format('Y-m-d H:i:s')),
+            $m->t('alert.row.detail') => $esc($context['detail'] ?? null),
+            $m->t('alert.row.ip') => $esc($context['ip']),
+            $m->t('alert.row.request') => $esc($context['method'].' '.$context['path']),
+            $m->t('alert.row.query') => $esc($context['query'] ?? null),
+            $m->t('alert.row.status') => $esc((string) $context['status']),
+            $m->t('alert.row.user_agent') => $esc($context['user_agent'] ?? null),
+            $m->t('alert.row.date') => $esc($m->date(new \DateTimeImmutable())),
         ];
-
-        $rowsHtml = '';
-        foreach ($rows as $label => $value) {
-            $rowsHtml .= '<tr>'
-                .'<td style="padding:6px 12px 6px 0;color:#64748b;white-space:nowrap;vertical-align:top">'.$label.'</td>'
-                .'<td style="padding:6px 0;font-family:monospace;word-break:break-all">'.$value.'</td>'
-                .'</tr>';
-        }
 
         // The actual state of the block, not an out-of-date instruction.
         if (null === $blocked) {
-            $footer = 'This IP was <strong>not</strong> blocked automatically '
-                .'(allowlisted, protected provider, or exempt path).';
+            $state = $m->t('alert.not_blocked');
         } elseif ($blocked->isPermanent()) {
-            $footer = 'This IP is blocked <strong>permanently</strong>.';
+            $state = $m->t('alert.blocked_permanently');
         } else {
-            $footer = 'This IP is blocked until <strong>'
-                .$blocked->getExpiresAt()->format('Y-m-d H:i').'</strong>.';
+            $state = $m->t('alert.blocked_until', ['%date%' => '<strong>'.$esc($m->date($blocked->getExpiresAt())).'</strong>']);
         }
 
+        $link = '';
         try {
-            $link = $this->router->generate('sentinelle_activity', [],
-                UrlGeneratorInterface::ABSOLUTE_URL);
-            $footer .= ' <a href="'.$link.'">See the log and unblock it</a>.';
+            $link = ' <a href="'.$esc($this->router->generate('sentinelle_activity', [],
+                UrlGeneratorInterface::ABSOLUTE_URL)).'" style="color:#1d4ed8">'.$esc($m->t('alert.link')).'</a>';
         } catch (\Throwable) {
             // Without a configured domain, ABSOLUTE_URL throws. An alert with
             // no link is still useful; an alert that never leaves because the
             // router does not know the hostname protects nobody.
         }
 
-        $subject = $served
-            ? sprintf('🔴🔴 POSSIBLE BREACH %s — %s (%s)', $this->siteName, $context['reason'], $context['ip'])
-            : sprintf('🚨 Security alert %s — %s (%s)', $this->siteName, $context['reason'], $context['ip']);
+        $params = ['%site%' => $this->siteName, '%kind%' => $kindLabel, '%ip%' => $context['ip']];
+        $subject = $served ? $m->t('alert.subject_breach', $params) : $m->t('alert.subject', $params);
         $banner = $served
-            ? '<div style="background:#7f1d1d;color:#fff;padding:14px;text-align:center;font-weight:900;font-size:16px">🔴 '.\count($served).' sensitive address(es) answered 2xx to this IP: see the red rows below. Data may have left.</div>'
-            : ($this->history ? '<div style="background:#ecfdf5;color:#065f46;padding:10px 14px;font-size:13px">✓ None of its requests to a sensitive address succeeded in the last 48 hours.</div>' : '');
-        $historyHtml = $this->history ? '<h3 style="font-size:14px;margin:16px 0 6px">Its last '.\count($history).' requests (48 h)</h3>'.IpHistory::html($history) : '';
+            ? Mail::note('🔴 '.$esc($m->n('alert.served', \count($served))), '#7f1d1d', '#ffffff')
+            : ($this->history ? Mail::note('✓ '.$esc($m->t('alert.nothing_served')), '#ecfdf5', '#065f46') : '');
+        $historyHtml = $this->history ? Mail::heading($esc($m->n('alert.history', \count($history)))).IpHistory::html($history, $m) : '';
 
-        return $this->send($subject, $served ? Email::PRIORITY_HIGHEST : Email::PRIORITY_HIGH, <<<HTML
-            <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:16px">
-              <div style="background:#b91c1c;color:#fff;padding:16px;border-radius:8px 8px 0 0;text-align:center">
-                <strong style="font-size:18px">🚨 {$esc($context['reason'])}</strong>
-              </div>
-              {$banner}
-              <div style="background:#fff;padding:16px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
-                <table style="width:100%;font-size:13px">{$rowsHtml}</table>
-                <p style="font-size:12px;color:#64748b;margin:16px 0 0">{$footer}<br>
-                At most one alert per IP per hour.</p>
-                {$historyHtml}
-              </div>
-            </div>
-            HTML);
+        $html = $m->page(
+            $served ? '#991b1b' : '#b91c1c',
+            $this->siteName,
+            $served ? $m->t('alert.title_breach', ['%kind%' => $kindLabel]) : $kindLabel,
+            $state.$link,
+            $banner.Mail::facts($rows).$historyHtml,
+            $esc($m->t('alert.footer')),
+        );
+
+        return $this->send($subject, $served ? Email::PRIORITY_HIGHEST : Email::PRIORITY_HIGH, $html);
     }
 
     private function send(string $subject, int $priority, string $html): bool

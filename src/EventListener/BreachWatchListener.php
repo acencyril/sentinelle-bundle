@@ -7,6 +7,7 @@ namespace Acencyril\SentinelleBundle\EventListener;
 use Acencyril\SentinelleBundle\Service\HumanPass;
 use Acencyril\SentinelleBundle\Service\IpBlocklist;
 use Acencyril\SentinelleBundle\Service\IpHistory;
+use Acencyril\SentinelleBundle\Service\Mail;
 use Acencyril\SentinelleBundle\Service\Sensitive;
 use Acencyril\SentinelleBundle\Service\SiteEventLogger;
 use Psr\Cache\CacheItemPoolInterface;
@@ -46,6 +47,7 @@ final class BreachWatchListener
         private ?HumanPass $humanPass = null,
         /** @var list<string> */
         private array $immediate = ['breach'],
+        private Mail $mail = new Mail(),
     ) {
     }
 
@@ -96,48 +98,40 @@ final class BreachWatchListener
 
     private function send(string $ip, string $request, int $status, ?string $leak, string $agent, bool $blocked): void
     {
-        $esc = static fn ($v): string => htmlspecialchars((string) ($v ?? '—'), \ENT_QUOTES, 'UTF-8');
-        $what = $leak ? 'A secret left in the response: '.$esc(substr($leak, 0, 24)).'…' : 'A sensitive file was served.';
-        $rows = '';
-        foreach (['Served' => $request, 'Answer' => (string) $status, 'IP' => $ip, 'User agent' => $agent, 'Time (UTC)' => gmdate('Y-m-d H:i:s'),
-            'Block' => $blocked ? 'IP blocked for 30 days' : 'IP NOT blocked (dry run, allowlist or protected provider): block it by hand'] as $k => $v) {
-            $rows .= '<tr><td style="padding:6px 10px 6px 0;color:#fecaca;white-space:nowrap;vertical-align:top">'.$k.'</td><td style="padding:6px 0;font-family:monospace;word-break:break-all;color:#fff;font-weight:bold">'.$esc($v).'</td></tr>';
+        $m = $this->mail;
+        $esc = Mail::esc(...);
+        $what = $leak ? $esc($m->t('breach.secret', ['%secret%' => substr($leak, 0, 24)])) : $esc($m->t('breach.file'));
+        $rows = [
+            $m->t('breach.row.served') => $esc($request),
+            $m->t('breach.row.status') => $esc((string) $status),
+            $m->t('alert.row.ip') => $esc($ip),
+            $m->t('alert.row.user_agent') => $esc($agent ?: null),
+            $m->t('breach.row.time') => $esc(gmdate('Y-m-d H:i:s')),
+            $m->t('breach.row.block') => $esc($blocked ? $m->t('breach.blocked') : $m->t('breach.not_blocked')),
+        ];
+        $steps = '';
+        foreach (['1', '2', '3', '4'] as $i) {
+            $steps .= '<li style="margin:0 0 6px">'.$m->t('breach.step'.$i).'</li>';
         }
-        $site = $esc(mb_strtoupper($this->siteName));
-        $html = <<<HTML
-            <div style="font-family:sans-serif;max-width:640px;margin:0 auto;background:#7f1d1d;padding:4px;border-radius:10px">
-              <div style="background:#dc2626;color:#fff;padding:22px 18px;border-radius:8px 8px 0 0;text-align:center">
-                <div style="font-size:22px;font-weight:900;margin-top:8px">🔴 PROBABLE BREACH — {$site}</div>
-                <div style="font-size:15px;margin-top:6px">{$what}<br>Not an attempt: <strong>the answer went out</strong>.</div>
-              </div>
-              <div style="background:#991b1b;padding:14px 18px"><table style="width:100%;font-size:13px">{$rows}</table></div>
-              <div style="background:#fff;padding:16px 18px;border-radius:0 0 8px 8px">
-                <strong style="color:#b91c1c">Now</strong>
-                <ol style="margin:8px 0 0;padding-left:20px;line-height:1.6">
-                  <li>Open the red row below: it is what the attacker received.</li>
-                  <li>Treat <strong>every key as stolen</strong>: rotate APP_SECRET, the database password and every API key in your environment.</li>
-                  <li>Fix and redeploy, then check that the address answers 404.</li>
-                  <li>If personal data may have left: in the EU, the authority must be notified within 72 hours.</li>
-                </ol>
-                <h3 style="font-size:14px;margin:18px 0 6px">Everything this IP did in 48 hours</h3>
-                {$this->historyHtml($ip)}
-              </div>
-            </div>
-            HTML;
+        $html = $m->page(
+            '#b91c1c',
+            $this->siteName,
+            '🔴 '.$m->t('breach.title'),
+            $what.'<br><strong>'.$esc($m->t('breach.not_attempt')).'</strong>',
+            Mail::note('<strong>'.$esc($m->t('breach.now')).'</strong><ol style="margin:8px 0 0;padding-left:20px;line-height:1.5">'.$steps.'</ol>', '#fef2f2', '#7f1d1d')
+                .Mail::facts($rows, $m->t('breach.row.served'))
+                .Mail::heading($esc($m->t('breach.history')))
+                .IpHistory::html($this->history->of($ip), $m),
+        );
         try {
-            $email = (new Email())->from(new Address($this->sender, $this->siteName.' — ALERT'))->to($this->recipient)
+            $email = (new Email())->from(new Address($this->sender, $this->siteName.' — '.$m->t('breach.from')))->to($this->recipient)
                 ->priority(Email::PRIORITY_HIGHEST)
-                ->subject(sprintf('🔴🔴 PROBABLE BREACH — %s: %s served (%d) to %s', $this->siteName, $request, $status, $ip))
+                ->subject($m->t('breach.subject', ['%site%' => $this->siteName, '%request%' => $request, '%status%' => (string) $status, '%ip%' => $ip]))
                 ->html($html);
             $email->getHeaders()->addTextHeader('Importance', 'high');
             $this->mailer->send($email);
         } catch (\Throwable $e) {
             $this->logger->critical('Sentinelle breach alert not sent: '.$e->getMessage());
         }
-    }
-
-    private function historyHtml(string $ip): string
-    {
-        return IpHistory::html($this->history->of($ip));
     }
 }

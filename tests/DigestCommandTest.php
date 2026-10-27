@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Acencyril\SentinelleBundle\Tests;
 
 use Acencyril\SentinelleBundle\Command\DigestCommand;
+use Acencyril\SentinelleBundle\Service\Mail;
+use Acencyril\SentinelleBundle\Service\SecurityAlert;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
@@ -38,13 +40,13 @@ final class DigestCommandTest extends TestCase
             'created_at' => (new \DateTimeImmutable('-1 hour'))->format('Y-m-d H:i:s')]);
     }
 
-    private function digest(array $options = []): CommandTester
+    private function digest(array $options = [], string $locale = 'en'): CommandTester
     {
         $mailer = $this->createStub(MailerInterface::class);
         $mailer->method('send')->willReturnCallback(function (Email $e): void {
             $this->sent[] = $e;
         });
-        $tester = new CommandTester(new DigestCommand($this->db, $mailer, 'me@example.com', 'noreply@example.com', 'Shop'));
+        $tester = new CommandTester(new DigestCommand($this->db, $mailer, 'me@example.com', 'noreply@example.com', 'Shop', SecurityAlert::IMMEDIATE_DEFAULT, new Mail(null, $locale)));
         $tester->execute($options);
 
         return $tester;
@@ -71,19 +73,22 @@ final class DigestCommandTest extends TestCase
         $this->visit('alert', '192.0.2.7', ['kind' => 'exploitation', 'emailed' => false]);
         $this->block('203.0.113.5', 'Automated scan — 15 probes in under 10 minutes');
         $this->block('192.0.2.7', 'Exploitation attempt — Pattern matched: sql_injection', '-1 minute');
+        $this->block('192.0.2.8', 'Manual: spam', null);
 
         $this->digest();
         self::assertCount(1, $this->sent);
         $mail = $this->sent[0];
-        self::assertSame('🛡 Sentinelle Shop — 3 alert(s), 2 blocked in 24 h', $mail->getSubject());
+        self::assertSame('Sentinelle Shop — 3 addresses blocked in 24 h', $mail->getSubject());
         $html = (string) $mail->getHtmlBody();
         self::assertMatchesRegularExpression('#Automated scan</td><td[^>]*>2</td>#', $html);
         self::assertMatchesRegularExpression('#Exploitation attempt</td><td[^>]*>1</td>#', $html);
         self::assertMatchesRegularExpression('#Probes recorded</td><td[^>]*>4</td>#', $html);
         self::assertMatchesRegularExpression('#Automated scan</td><td[^>]*>1</td></tr>#', $html, 'blocks grouped by reason, without the detail');
         // Top addresses: the scanner first, still blocked; the expired block reads "not blocked".
-        self::assertMatchesRegularExpression('#203\.0\.113\.5</td><td[^>]*>5</td><td[^>]*>blocked</td>.*192\.0\.2\.7</td><td[^>]*>1</td><td[^>]*>not blocked#s', $html);
-        self::assertStringNotContainsString('Sensitive answers served:', $html);
+        self::assertMatchesRegularExpression('#203\.0\.113\.5</span></td><td[^>]*>5</td><td[^>]*><span[^>]*>blocked</span></td>.*192\.0\.2\.7</span></td><td[^>]*>1</td><td[^>]*><span[^>]*>not blocked#s', $html);
+        self::assertStringNotContainsString('Sensitive answers served<', $html);
+        self::assertMatchesRegularExpression('#Exploitation attempt</td><td[^>]*>1</td><td[^>]*><span[^>]*>here only#', $html);
+        self::assertMatchesRegularExpression('#Manual: spam</td><td[^>]*>1</td>#', $html, 'a reason of its own is kept as written');
     }
 
     public function testABreachIsListedInRed(): void
@@ -91,7 +96,7 @@ final class DigestCommandTest extends TestCase
         $this->visit('breach_served', '203.0.113.5', ['status' => 200], '-2 hours', '/.git/config');
         $this->digest();
         self::assertCount(1, $this->sent);
-        self::assertStringStartsWith('🔴 Sentinelle Shop', (string) $this->sent[0]->getSubject());
+        self::assertSame('🔴 Sentinelle Shop — probable breach in 24 h', $this->sent[0]->getSubject());
         self::assertStringContainsString('/.git/config', (string) $this->sent[0]->getHtmlBody());
     }
 
@@ -101,5 +106,60 @@ final class DigestCommandTest extends TestCase
         $display = $this->digest(['--dry-run' => true])->getDisplay();
         self::assertStringContainsString('alert scan: 1 (0 emailed)', $display);
         self::assertCount(0, $this->sent);
+    }
+
+    private function frenchDay(): void
+    {
+        foreach (range(1, 4) as $i) {
+            $this->visit('scan_probe', '203.0.113.5');
+        }
+        $this->visit('attack_attempt', '192.0.2.7');
+        $this->visit('alert', '203.0.113.5', ['kind' => 'scan', 'emailed' => false]);
+        $this->visit('alert', '192.0.2.7', ['kind' => 'exploitation', 'emailed' => false]);
+        foreach (['203.0.113.5', '203.0.113.6', '203.0.113.7'] as $ip) {
+            $this->block($ip, 'Automated scan — 15 probes in under 10 minutes');
+        }
+        $this->block('192.0.2.7', 'Exploitation attempt — Pattern matched: sql_injection');
+    }
+
+    public function testInFrench(): void
+    {
+        $this->frenchDay();
+        $this->digest([], 'fr');
+        $mail = $this->sent[0];
+        self::assertSame('Sentinelle Shop — 4 adresses bloquées en 24 h', $mail->getSubject());
+        $html = (string) $mail->getHtmlBody();
+        foreach (['Alertes des dernières 24 h', 'Requêtes hostiles', 'Fuite probable (fichier sensible servi)', 'Tentative d’exploitation', 'Force brute probable', 'Sondages enregistrés', '4 adresses bloquées automatiquement', 'Adresses les plus actives', 'envoyée tout de suite', 'ici seulement', '<html lang="fr">'] as $text) {
+            self::assertStringContainsString($text, $html);
+        }
+        self::assertMatchesRegularExpression('#Scan automatisé</td><td[^>]*>3</td></tr>#', $html, 'block reasons in French too');
+        self::assertMatchesRegularExpression('#203\.0\.113\.5</span></td><td[^>]*>4</td><td[^>]*><span[^>]*>bloquée#', $html);
+        self::assertStringNotContainsString('Hostile', $html);
+    }
+
+    public function testFrenchSubjects(): void
+    {
+        $this->visit('alert', '203.0.113.6', ['kind' => 'scan']);
+        $this->digest([], 'fr');
+        self::assertSame('Sentinelle Shop — 1 alerte en 24 h', $this->sent[0]->getSubject());
+        self::assertStringContainsString('Aucune adresse bloquée', (string) $this->sent[0]->getHtmlBody());
+
+        $this->sent = [];
+        $this->db->executeStatement('DELETE FROM sentinelle_visit');
+        $this->visit('attack_attempt', '192.0.2.7');
+        $this->digest([], 'fr');
+        self::assertSame('Sentinelle Shop — rien à signaler', $this->sent[0]->getSubject());
+
+        $this->sent = [];
+        $this->block('203.0.113.9', 'Automated scan');
+        $this->digest([], 'fr');
+        self::assertSame('Sentinelle Shop — 1 adresse bloquée en 24 h', $this->sent[0]->getSubject());
+    }
+
+    public function testAnUnknownLocaleFallsBackToEnglish(): void
+    {
+        $this->frenchDay();
+        $this->digest([], 'de');
+        self::assertSame('Sentinelle Shop — 4 addresses blocked in 24 h', $this->sent[0]->getSubject());
     }
 }

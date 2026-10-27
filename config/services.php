@@ -15,6 +15,7 @@ use Acencyril\SentinelleBundle\Repository\VisitRepository;
 use Acencyril\SentinelleBundle\Service\HumanPass;
 use Acencyril\SentinelleBundle\Service\IpBlocklist;
 use Acencyril\SentinelleBundle\Service\IpIdentifier;
+use Acencyril\SentinelleBundle\Service\Mail;
 use Acencyril\SentinelleBundle\Service\SecurityAlert;
 use Acencyril\SentinelleBundle\Service\SiteEventLogger;
 
@@ -56,6 +57,9 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
     $services->set(IpHistory::class)
         ->args([service('doctrine.dbal.default_connection')]);
 
+    $services->set(Mail::class)
+        ->args([service('translator')->nullOnInvalid(), '%sentinelle.mail.locale%']);
+
     $services->set(SecurityAlert::class)
         ->args([
             service('mailer.mailer'),
@@ -68,6 +72,7 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             service(IpHistory::class),
             '%sentinelle.alert.quiet_when_blocked%',
             '%sentinelle.alert.immediate%',
+            service(Mail::class),
         ]);
 
     /* After the activity listener (default priority 0) on kernel.terminate: the history in
@@ -86,6 +91,7 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             '%kernel.environment%',
             service(HumanPass::class)->nullOnInvalid(),
             '%sentinelle.alert.immediate%',
+            service(Mail::class),
         ])
         ->tag('kernel.event_listener', [
             'event' => 'kernel.terminate', 'method' => 'onKernelTerminate', 'priority' => -64,
@@ -169,6 +175,7 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             '%sentinelle.alert.sender%',
             '%sentinelle.alert.site_name%',
             '%sentinelle.alert.immediate%',
+            service(Mail::class),
         ])
         ->tag('console.command');
 

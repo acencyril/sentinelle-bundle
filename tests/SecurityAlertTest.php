@@ -6,6 +6,7 @@ namespace Acencyril\SentinelleBundle\Tests;
 
 use Acencyril\SentinelleBundle\Entity\BlockedIp;
 use Acencyril\SentinelleBundle\Service\IpHistory;
+use Acencyril\SentinelleBundle\Service\Mail;
 use Acencyril\SentinelleBundle\Service\SecurityAlert;
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
@@ -20,7 +21,7 @@ final class SecurityAlertTest extends TestCase
     private array $sent = [];
 
     /** @param list<array<string, mixed>> $rows sentinelle_visit rows */
-    private function alert(array $rows, bool $quiet = true, array $immediate = SecurityAlert::KINDS): SecurityAlert
+    private function alert(array $rows, bool $quiet = true, array $immediate = SecurityAlert::KINDS, string $locale = 'en'): SecurityAlert
     {
         $this->sent = [];
         $mailer = $this->createStub(MailerInterface::class);
@@ -32,7 +33,7 @@ final class SecurityAlertTest extends TestCase
         $urls = $this->createStub(UrlGeneratorInterface::class);
         $urls->method('generate')->willReturn('https://example.com/admin/activity');
 
-        return new SecurityAlert($mailer, new NullLogger(), $urls, 'me@example.com', 'noreply@example.com', 'Sentinelle', 'Shop', new IpHistory($db), $quiet, $immediate);
+        return new SecurityAlert($mailer, new NullLogger(), $urls, 'me@example.com', 'noreply@example.com', 'Sentinelle', 'Shop', new IpHistory($db), $quiet, $immediate, new Mail(null, $locale));
     }
 
     private static function context(): array
@@ -55,7 +56,7 @@ final class SecurityAlertTest extends TestCase
     {
         $this->alert([self::row('probe', '/.env', 404)], false)->notify(self::context(), new BlockedIp('203.0.113.5', 'scan'));
         self::assertCount(1, $this->sent);
-        self::assertStringStartsWith('🚨 Security alert Shop', (string) $this->sent[0]->getSubject());
+        self::assertSame('🚨 Sentinelle Shop — Automated scan from 203.0.113.5', (string) $this->sent[0]->getSubject());
         self::assertStringContainsString('None of its requests to a sensitive address succeeded', (string) $this->sent[0]->getHtmlBody());
     }
 
@@ -71,9 +72,9 @@ final class SecurityAlertTest extends TestCase
         $this->alert([self::row('probe', '/.env', 200), self::row('page_view', '/', 200)])->notify(self::context(), new BlockedIp('203.0.113.5', 'scan'));
         self::assertCount(1, $this->sent);
         $mail = $this->sent[0];
-        self::assertStringStartsWith('🔴🔴 POSSIBLE BREACH Shop', (string) $mail->getSubject());
+        self::assertStringStartsWith('🔴🔴 Sentinelle Shop — POSSIBLE BREACH', (string) $mail->getSubject());
         self::assertSame(Email::PRIORITY_HIGHEST, $mail->getPriority());
-        self::assertStringContainsString('1 sensitive address(es) answered 2xx', (string) $mail->getHtmlBody());
+        self::assertStringContainsString('1 sensitive address answered this IP with a 2xx', (string) $mail->getHtmlBody());
         self::assertStringContainsString('⚠ SERVED', (string) $mail->getHtmlBody());
     }
 
@@ -91,7 +92,7 @@ final class SecurityAlertTest extends TestCase
         $alert = $this->alert([self::row('probe', '/.env', 200)], true, SecurityAlert::IMMEDIATE_DEFAULT);
         self::assertTrue($alert->notify(self::context(), new BlockedIp('203.0.113.5', 'scan')));
         self::assertCount(1, $this->sent);
-        self::assertStringStartsWith('🔴🔴 POSSIBLE BREACH Shop', (string) $this->sent[0]->getSubject());
+        self::assertStringStartsWith('🔴🔴 Sentinelle Shop — POSSIBLE BREACH', (string) $this->sent[0]->getSubject());
     }
 
     public function testAKindListedAsImmediateIsEmailed(): void
@@ -116,5 +117,37 @@ final class SecurityAlertTest extends TestCase
         $db->expects(self::never())->method('fetchAllAssociative');
         $alert = new SecurityAlert($this->createStub(MailerInterface::class), new NullLogger(), $this->createStub(UrlGeneratorInterface::class), 'me@example.com', 'noreply@example.com', 'Sentinelle', 'Shop', new IpHistory($db), true, ['exploitation']);
         self::assertFalse($alert->notify(self::context()));
+    }
+
+    public function testInFrench(): void
+    {
+        $this->alert([self::row('probe', '/.env', 404)], false, SecurityAlert::KINDS, 'fr')->notify(self::context(), new BlockedIp('203.0.113.5', 'scan'));
+        self::assertCount(1, $this->sent);
+        self::assertSame('🚨 Sentinelle Shop — Scan automatisé depuis 203.0.113.5', $this->sent[0]->getSubject());
+        $html = (string) $this->sent[0]->getHtmlBody();
+        self::assertStringContainsString('<html lang="fr">', $html);
+        self::assertStringContainsString('Aucune de ses requêtes vers une adresse sensible n’a abouti', $html);
+        self::assertStringContainsString('Ce qui a été vu', $html);
+        self::assertStringContainsString('Voir le journal, la débloquer', $html);
+        self::assertStringNotContainsString('Request', $html);
+    }
+
+    public function testABreachInFrench(): void
+    {
+        $this->alert([self::row('probe', '/.env', 200)], true, SecurityAlert::IMMEDIATE_DEFAULT, 'fr')->notify(self::context(), new BlockedIp('203.0.113.5', 'scan'));
+        self::assertSame('🔴🔴 Sentinelle Shop — FUITE POSSIBLE depuis 203.0.113.5', $this->sent[0]->getSubject());
+        self::assertStringContainsString('Une adresse sensible a répondu 2xx à cette IP', (string) $this->sent[0]->getHtmlBody());
+        self::assertStringContainsString('⚠ SERVI', (string) $this->sent[0]->getHtmlBody());
+    }
+
+    public function testTheLayoutLoadsNothingFromOutside(): void
+    {
+        $this->alert([self::row('probe', '/.env', 200)])->notify(self::context());
+        $html = (string) $this->sent[0]->getHtmlBody();
+        self::assertStringContainsString('name="viewport"', $html);
+        self::assertStringContainsString('max-width:600px', $html);
+        self::assertDoesNotMatchRegularExpression('#<(img|link|script|style)\b|url\(|@import|src=#i', $html);
+        // the only address in it: the dashboard link
+        self::assertSame(['https://example.com/admin/activity'], array_values(array_unique(preg_match_all('#https?://[^"\s<]+#', $html, $m) ? $m[0] : [])));
     }
 }

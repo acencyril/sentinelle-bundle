@@ -114,6 +114,19 @@ dashboard:
 
 `--dry-run` prints the counts without sending; `--hours=48` widens the window.
 
+The emails are in English or French: the application's `kernel.default_locale`
+by default, or set it (any other language falls back to English):
+
+```yaml
+sentinelle:
+  mail:
+    locale: fr
+```
+
+Every text can be reworded in your translations, domain `sentinelle`, keys
+`mail.*`. The layout is one plain card, readable on a phone, with nothing loaded
+from outside the email.
+
 ---
 
 ## Why that last point matters

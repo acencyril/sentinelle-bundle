@@ -119,6 +119,20 @@ se voient que dans le tableau de bord :
 `--dry-run` affiche les compteurs sans rien envoyer ; `--hours=48` élargit la
 fenêtre.
 
+Les e-mails sont en français ou en anglais : la langue `kernel.default_locale`
+de l'application par défaut, ou celle que vous fixez (toute autre langue retombe
+sur l'anglais) :
+
+```yaml
+sentinelle:
+  mail:
+    locale: fr
+```
+
+Chaque texte peut être reformulé dans vos traductions, domaine `sentinelle`, clés
+`mail.*`. La mise en page est une simple carte, lisible sur téléphone, sans rien
+charger de l'extérieur.
+
 ---
 
 ## Pourquoi ce dernier point compte

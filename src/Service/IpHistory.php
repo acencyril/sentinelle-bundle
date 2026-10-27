@@ -50,24 +50,26 @@ class IpHistory
     }
 
     /** The history as an email table, a sensitive answer that went out in red. */
-    public static function html(array $rows): string
+    public static function html(array $rows, ?Mail $mail = null): string
     {
+        $mail ??= new Mail();
         if (!$rows) {
-            return '<p style="font-size:12px;color:#64748b">No history recorded for this address.</p>';
+            return '<p style="font-size:13px;color:'.Mail::MUTED.'">'.Mail::esc($mail->t('history.none')).'</p>';
         }
-        $esc = static fn ($v): string => htmlspecialchars((string) ($v ?? '—'), \ENT_QUOTES, 'UTF-8');
         $hot = self::served($rows);
-        $out = '<table style="width:100%;border-collapse:collapse;font-size:12px;font-family:monospace">'
-            .'<tr style="background:#f1f5f9"><th align="left" style="padding:4px">Time (UTC)</th><th align="left" style="padding:4px">Request</th><th align="left" style="padding:4px">Answer</th></tr>';
+        $cells = [];
+        $styles = [];
         foreach ($rows as $r) {
             $isHot = \in_array($r, $hot, true);
             $ok = null !== $r['status'] && $r['status'] >= 200 && $r['status'] < 300;
-            $style = $isHot ? 'background:#b91c1c;color:#fff;font-weight:bold' : ($ok && 'page_view' !== $r['type'] ? 'background:#fef3c7' : '');
-            $out .= '<tr style="'.$style.'"><td style="padding:3px 4px;white-space:nowrap">'.$esc(substr($r['at'], 5, 14)).'</td>'
-                .'<td style="padding:3px 4px;word-break:break-all">'.$esc(trim(($r['method'] ?? '').' '.($r['url'] ?? ''))).'</td>'
-                .'<td style="padding:3px 4px">'.$esc($r['status']).($isHot ? ' ⚠ SERVED' : '').'</td></tr>';
+            $styles[] = $isHot ? 'background:#b91c1c;color:#ffffff;font-weight:bold' : ($ok && 'page_view' !== $r['type'] ? 'background:#fef3c7' : '');
+            $cells[] = [
+                '<span style="white-space:nowrap">'.Mail::esc(substr($r['at'], 5, 14)).'</span>',
+                Mail::mono(Mail::esc(trim(($r['method'] ?? '').' '.($r['url'] ?? '')))),
+                Mail::esc($r['status']).($isHot ? ' ⚠ '.Mail::esc($mail->t('history.served')) : ''),
+            ];
         }
 
-        return $out.'</table>';
+        return Mail::table([$mail->t('history.time'), $mail->t('history.request'), $mail->t('history.answer')], $cells, [], $styles);
     }
 }

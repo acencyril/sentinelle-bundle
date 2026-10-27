@@ -6,6 +6,23 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-10-27
+
+### Added
+- **The emails in English or French.** New option `mail.locale` (`en` or `fr`; default: the
+  application's `kernel.default_locale`, any other language falls back to English). The alert,
+  the breach alarm and the daily digest are translated: keys `mail.*`, domain `sentinelle`, the
+  application's translations first, so any text can be reworded.
+
+### Changed
+- **A cleaner email layout**: one card, at most 600 px wide and fluid on a phone, tables with
+  light rules, system fonts, inline styles only; nothing loaded from outside (no image, font or
+  stylesheet). Block reasons and alert kinds read as words ("Automated scan", "Scan automatisé").
+- **Shorter subjects.** Digest: `Sentinelle <site> — 4 addresses blocked in 24 h`, `— 3 alerts
+  in 24 h`, `— nothing to report`, `🔴 … — probable breach in 24 h`. Alert: `🚨 Sentinelle <site>
+  — Automated scan from <ip>`, `🔴🔴 Sentinelle <site> — POSSIBLE BREACH from <ip>`. A mail filter
+  on the old subjects ("Security alert", "alert(s), … blocked") needs updating.
+
 ## [0.7.0] — 2026-10-27
 
 ### Added
