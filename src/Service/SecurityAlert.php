@@ -32,9 +32,24 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * emails buried the ones that counted. When a sensitive address was answered with a 2xx, the
  * email turns red, top priority, "POSSIBLE BREACH" in the subject. The quiet blocks are
  * counted in the daily digest (sentinelle:digest).
+ *
+ * Since 0.6: an alert has a kind (KINDS) and only the kinds listed in `alert.immediate` leave at
+ * once; by default only `breach`, a sensitive address actually answered with a 2xx. The others
+ * are recorded (an `alert` row) and counted in the daily digest. An email for every scanner
+ * trains you to ignore Sentinelle's emails, and then you miss the one that says it got through.
  */
 class SecurityAlert
 {
+    /**
+     * What an alert can be about. `breach`: a sensitive address was answered with a 2xx (data
+     * may have left). `exploitation`: a request carrying an exploit (RCE, SQL injection,
+     * traversal, Log4Shell…). `brute_force`: repeated access denials. `scan`: a burst of probes.
+     */
+    public const KINDS = ['breach', 'exploitation', 'brute_force', 'scan'];
+
+    /** The default `alert.immediate`: only what actually got through. */
+    public const IMMEDIATE_DEFAULT = ['breach'];
+
     public function __construct(
         private MailerInterface $mailer,
         private LoggerInterface $logger,
@@ -45,19 +60,49 @@ class SecurityAlert
         private string $siteName,
         private ?IpHistory $history = null,
         private bool $quietWhenBlocked = true,
+        /** @var list<string> kinds emailed at once; the others wait for the digest */
+        private array $immediate = self::IMMEDIATE_DEFAULT,
     ) {
     }
 
-    /**
-     * @param array{reason:string,detail:?string,ip:string,path:string,method:string,query:?string,status:int,user_agent:?string} $context
-     */
-    public function notify(array $context, ?BlockedIp $blocked = null): void
+    /** The kind of an alert from its reason, as SiteEventLogger words it. */
+    public static function kindOf(string $reason): string
     {
+        return match (true) {
+            str_starts_with($reason, 'Exploitation') => 'exploitation',
+            str_starts_with($reason, 'Likely brute force') => 'brute_force',
+            str_contains($reason, 'BREACH'), str_starts_with($reason, 'Probable breach') => 'breach',
+            default => 'scan',
+        };
+    }
+
+    public function isImmediate(string $kind): bool
+    {
+        return \in_array($kind, $this->immediate, true);
+    }
+
+    /**
+     * Sends the alert if its kind is immediate. Returns whether an email went out; when it did
+     * not, the alert waits for the digest.
+     *
+     * @param array{reason:string,detail:?string,ip:string,path:string,method:string,query:?string,status:int,user_agent:?string,kind?:string} $context
+     */
+    public function notify(array $context, ?BlockedIp $blocked = null): bool
+    {
+        $kind = $context['kind'] ?? self::kindOf($context['reason']);
+        // The history is only read when it can change the answer: an address whose earlier
+        // requests were served sensitive answers turns any alert into a breach.
+        if (!$this->isImmediate($kind) && !$this->isImmediate('breach')) {
+            return false;
+        }
         $esc = static fn (?string $v): string => htmlspecialchars((string) ($v ?? '—'), \ENT_QUOTES, 'UTF-8');
         $history = $this->history?->of($context['ip']) ?? [];
         $served = IpHistory::served($history);
+        if (!$this->isImmediate($served ? 'breach' : $kind)) {
+            return false;
+        }
         if ($this->quietWhenBlocked && null !== $blocked && !$served) {
-            return;
+            return false;
         }
 
         $rows = [
@@ -107,7 +152,7 @@ class SecurityAlert
             : ($this->history ? '<div style="background:#ecfdf5;color:#065f46;padding:10px 14px;font-size:13px">✓ None of its requests to a sensitive address succeeded in the last 48 hours.</div>' : '');
         $historyHtml = $this->history ? '<h3 style="font-size:14px;margin:16px 0 6px">Its last '.\count($history).' requests (48 h)</h3>'.IpHistory::html($history) : '';
 
-        $this->send($subject, $served ? Email::PRIORITY_HIGHEST : Email::PRIORITY_HIGH, <<<HTML
+        return $this->send($subject, $served ? Email::PRIORITY_HIGHEST : Email::PRIORITY_HIGH, <<<HTML
             <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:16px">
               <div style="background:#b91c1c;color:#fff;padding:16px;border-radius:8px 8px 0 0;text-align:center">
                 <strong style="font-size:18px">🚨 {$esc($context['reason'])}</strong>
@@ -123,7 +168,7 @@ class SecurityAlert
             HTML);
     }
 
-    private function send(string $subject, int $priority, string $html): void
+    private function send(string $subject, int $priority, string $html): bool
     {
         try {
             $email = (new Email())
@@ -136,11 +181,15 @@ class SecurityAlert
                 $email->getHeaders()->addTextHeader('Importance', 'high');
             }
             $this->mailer->send($email);
+
+            return true;
         } catch (\Throwable $e) {
             // An alarm that breaks the site destroys more than it defends.
             $this->logger->warning('Security alert not sent', [
                 'subject' => $subject, 'error' => $e->getMessage(),
             ]);
+
+            return false;
         }
     }
 }

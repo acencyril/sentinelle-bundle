@@ -71,6 +71,7 @@ return [
     'dashboard.who.unknown' => 'unknown (no reverse DNS)',
     'dashboard.kind.attack_attempt' => 'exploitation attempt',
     'dashboard.kind.breach_served' => 'sensitive answer',
+    'dashboard.kind.alert' => 'alert',
     'dashboard.kind.ip_blocked' => 'IP blocked',
     'dashboard.kind.human_pass' => 'human pass',
     'dashboard.kind.scan_probe' => 'probe',

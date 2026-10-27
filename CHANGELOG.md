@@ -6,6 +6,30 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-27
+
+### Changed
+- **Only what got through is emailed at once.** New option `alert.immediate`: the alert kinds
+  emailed immediately, among `breach` (a sensitive address served with a 2xx, or a secret in a
+  response), `exploitation`, `brute_force` and `scan`, or `all`. The default is `[breach]`:
+  automated scans, exploitation attempts and brute force are still detected, blocked and
+  logged, but counted in the daily digest instead of one email each. An email per scanner
+  trains you to ignore Sentinelle's emails, and then the one saying a file was actually served
+  looks like the hundred others. The old behaviour: `immediate: all` with
+  `quiet_when_blocked: false`. See UPGRADE.md.
+- **The daily digest (`sentinelle:digest`) says what was held back**: alerts in the window by
+  kind (and whether that kind is emailed at once), sensitive answers served (in red), hostile
+  requests by type, addresses blocked by reason (the reason without its detail, so a hundred
+  scans make one line), and the ten busiest hostile addresses with whether they are still
+  blocked. Still nothing sent when nothing happened. New `--dry-run` option.
+- Every alert, emailed or not, writes an `alert` row (kind, reason, emailed, blocked); the
+  dashboard shows it as a kind of its own.
+- `SecurityAlert::notify()` returns whether an email went out.
+
+### Fixed
+- The alert email now knows the block it just caused: it said "not blocked automatically"
+  even when the address had been blocked, and `alert.quiet_when_blocked` never applied.
+
 ## [0.5.1] — 2026-10-27
 
 ### Changed

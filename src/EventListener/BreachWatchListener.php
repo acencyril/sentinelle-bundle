@@ -26,7 +26,9 @@ use Symfony\Component\Mime\Email;
  * Either one means data has probably left: the address is blocked 30 days at once and a red,
  * top-priority email goes out with what it did before and what to do now. Runs on
  * kernel.terminate after the activity listener, so the history includes this very request.
- * One email per address and path per 10 minutes. Off with `breach_watch: false`.
+ * One email per address and path per 10 minutes. Off with `breach_watch: false`. The email
+ * leaves only while `breach` is in `alert.immediate` (the default); otherwise the breach is
+ * still blocked, logged and listed first in the daily digest.
  */
 final class BreachWatchListener
 {
@@ -42,6 +44,8 @@ final class BreachWatchListener
         private string $siteName,
         private string $environment,
         private ?HumanPass $humanPass = null,
+        /** @var list<string> */
+        private array $immediate = ['breach'],
     ) {
     }
 
@@ -79,6 +83,9 @@ final class BreachWatchListener
         $this->humanPass?->revoke($ip);
         $this->logger->critical('Sentinelle: sensitive answer served', ['ip' => $ip, 'path' => $path, 'status' => $status, 'secret' => null !== $leak]);
 
+        if (!\in_array('breach', $this->immediate, true)) {
+            return;
+        }
         $item = $this->cache->getItem('sentinelle_breach_'.sha1($ip.$path));
         if ($item->isHit()) {
             return;

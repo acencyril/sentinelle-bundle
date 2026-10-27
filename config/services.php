@@ -67,6 +67,7 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             '%sentinelle.alert.site_name%',
             service(IpHistory::class),
             '%sentinelle.alert.quiet_when_blocked%',
+            '%sentinelle.alert.immediate%',
         ]);
 
     /* After the activity listener (default priority 0) on kernel.terminate: the history in
@@ -84,6 +85,7 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             '%sentinelle.alert.site_name%',
             '%kernel.environment%',
             service(HumanPass::class)->nullOnInvalid(),
+            '%sentinelle.alert.immediate%',
         ])
         ->tag('kernel.event_listener', [
             'event' => 'kernel.terminate', 'method' => 'onKernelTerminate', 'priority' => -64,
@@ -166,6 +168,7 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             '%sentinelle.alert.recipient%',
             '%sentinelle.alert.sender%',
             '%sentinelle.alert.site_name%',
+            '%sentinelle.alert.immediate%',
         ])
         ->tag('console.command');
 

@@ -53,10 +53,66 @@ navigateur qui demande une page reçoit une preuve de travail en un clic au lieu
 d'un refus sec, et passe ; les scripts et les chemins sensibles restent fermés.
 Voir [Le laissez-passer](#le-laissez-passer--bloqué-mais-pas-enfermé).
 
-**Il prévient par courriel**, une fois par adresse et par heure au maximum.
+**Il ne vous écrit tout de suite que quand quelque chose est passé** : un fichier
+sensible ou un secret réellement servi avec un 2xx. Toutes les autres alertes
+(scans, tentatives d'exploitation, force brute) sont comptées dans un seul
+récapitulatif quotidien. Voir [Quand il vous écrit](#quand-il-vous-écrit).
 
 **Et il refuse de bloquer ce dont vous dépendez.** C'est la pièce qui manque
 partout ailleurs, et celle qui justifie ce bundle.
+
+---
+
+## Quand il vous écrit
+
+Par défaut, **un seul type d'alerte part tout de suite : `breach`**, une adresse
+sensible (`.env`, `.git`, clés, dumps…) servie avec un 2xx, ou un secret trouvé
+dans une réponse. Pas « quelqu'un a essayé » : la réponse est partie. Ce courriel
+est rouge, en priorité maximale, et dit quoi faire maintenant.
+
+Tout le reste est toujours détecté, bloqué et journalisé, puis **compté dans le
+récapitulatif quotidien** (`sentinelle:digest`) : les alertes par type, les
+requêtes hostiles, les adresses bloquées par motif et les dix adresses hostiles
+les plus actives. Un jour sans rien à dire n'envoie rien.
+
+Pourquoi : un site public est scanné toute la journée. Avec un courriel par
+scanner, quelques sites font plus de cent alertes par semaine, toutes « bloquée,
+rien servi ». On apprend à les ignorer, à les filtrer, à les archiver sans les
+lire — et celle qui compte, *un fichier sensible a vraiment été servi*,
+ressemble exactement aux cent autres. C'est la fatigue d'alerte qui fait rater
+les vrais incidents. Une adresse à qui tout a été refusé ne demande rien de
+vous ; une adresse à qui on a servi `.env`, si, dans l'heure.
+
+Les types sont `breach`, `exploitation` (motifs d'exploitation : RCE, injection
+SQL, traversée de répertoires, Log4Shell…), `brute_force` (refus d'accès
+répétés) et `scan` (une rafale de sondages). Choisissez ceux qui vous écrivent
+tout de suite :
+
+```yaml
+sentinelle:
+    alert:
+        immediate: [breach]                 # la valeur par défaut depuis la 0.6
+        # immediate: [breach, exploitation] # aussi chaque tentative d'exploitation
+        # immediate: all                    # le comportement d'avant la 0.6 : un courriel par alerte
+```
+
+Pour retrouver exactement les courriels d'avant la 0.6 : `immediate: all` et
+`quiet_when_blocked: false` (sinon, une adresse déjà bloquée dont tous les essais
+ont échoué reste silencieuse).
+
+Chaque alerte, envoyée ou non, laisse une ligne `alert` dans le journal (son
+type, le motif, si elle a été envoyée, si l'adresse a été bloquée) : c'est ce que
+compte le récapitulatif, et le tableau de bord l'affiche comme un type à part.
+
+**Planifiez le récapitulatif une fois par jour**, sinon les alertes retenues ne
+se voient que dans le tableau de bord :
+
+```
+0 7 * * *  php /chemin/bin/console sentinelle:digest
+```
+
+`--dry-run` affiche les compteurs sans rien envoyer ; `--hours=48` élargit la
+fenêtre.
 
 ---
 
@@ -172,6 +228,8 @@ sentinelle:
         recipient: '%env(SENTINELLE_ALERT_EMAIL)%'
         sender:    'no-reply@mon-site.fr'
         site_name: 'Mon Site'
+        # Les types envoyés tout de suite ; le reste va dans le récapitulatif quotidien.
+        immediate: [breach]                 # la valeur par défaut
 
     access:
         role:            ROLE_ADMIN
@@ -224,6 +282,13 @@ vingt-quatre heures.
 
 ```
 0 4 * * *  php /chemin/bin/console sentinelle:purge
+```
+
+Et le récapitulatif quotidien, où finit toute alerte qui n'est pas une fuite
+(voir [Quand il vous écrit](#quand-il-vous-écrit)) :
+
+```
+0 7 * * *  php /chemin/bin/console sentinelle:digest
 ```
 
 ### 5. Démarrer en mode d'essai
@@ -455,8 +520,12 @@ grave qu'un site qui refuse tout le monde.
 
 ## Mettre à jour
 
-De la 0.4 à la 0.5, voir [UPGRADE.md](UPGRADE.md) : rien à changer, mais les
-navigateurs bloqués voient désormais une page de défi au lieu d'un 403 sec.
+De la 0.5 à la 0.6, voir [UPGRADE.md](UPGRADE.md) : par défaut, seules les
+fuites sont envoyées tout de suite ; planifiez `sentinelle:digest` chaque jour, ou
+mettez `alert.immediate: all` pour garder un courriel par alerte.
+
+De la 0.4 à la 0.5 : rien à changer, mais les navigateurs bloqués voient
+désormais une page de défi au lieu d'un 403 sec.
 
 ### Depuis la 0.2
 

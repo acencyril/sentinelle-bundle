@@ -20,7 +20,7 @@ final class SecurityAlertTest extends TestCase
     private array $sent = [];
 
     /** @param list<array<string, mixed>> $rows sentinelle_visit rows */
-    private function alert(array $rows, bool $quiet = true): SecurityAlert
+    private function alert(array $rows, bool $quiet = true, array $immediate = SecurityAlert::KINDS): SecurityAlert
     {
         $this->sent = [];
         $mailer = $this->createStub(MailerInterface::class);
@@ -32,7 +32,7 @@ final class SecurityAlertTest extends TestCase
         $urls = $this->createStub(UrlGeneratorInterface::class);
         $urls->method('generate')->willReturn('https://example.com/admin/activity');
 
-        return new SecurityAlert($mailer, new NullLogger(), $urls, 'me@example.com', 'noreply@example.com', 'Sentinelle', 'Shop', new IpHistory($db), $quiet);
+        return new SecurityAlert($mailer, new NullLogger(), $urls, 'me@example.com', 'noreply@example.com', 'Sentinelle', 'Shop', new IpHistory($db), $quiet, $immediate);
     }
 
     private static function context(): array
@@ -75,5 +75,46 @@ final class SecurityAlertTest extends TestCase
         self::assertSame(Email::PRIORITY_HIGHEST, $mail->getPriority());
         self::assertStringContainsString('1 sensitive address(es) answered 2xx', (string) $mail->getHtmlBody());
         self::assertStringContainsString('⚠ SERVED', (string) $mail->getHtmlBody());
+    }
+
+    public function testByDefaultAScanWaitsForTheDigest(): void
+    {
+        $alert = $this->alert([self::row('probe', '/.env', 404)], true, SecurityAlert::IMMEDIATE_DEFAULT);
+        self::assertFalse($alert->notify(self::context()));
+        self::assertFalse($alert->notify(['kind' => 'exploitation', 'reason' => 'Exploitation attempt'] + self::context()));
+        self::assertFalse($alert->notify(['kind' => 'brute_force', 'reason' => 'Likely brute force'] + self::context()));
+        self::assertCount(0, $this->sent);
+    }
+
+    public function testByDefaultWhatGotThroughStillAlertsAtOnce(): void
+    {
+        $alert = $this->alert([self::row('probe', '/.env', 200)], true, SecurityAlert::IMMEDIATE_DEFAULT);
+        self::assertTrue($alert->notify(self::context(), new BlockedIp('203.0.113.5', 'scan')));
+        self::assertCount(1, $this->sent);
+        self::assertStringStartsWith('🔴🔴 POSSIBLE BREACH Shop', (string) $this->sent[0]->getSubject());
+    }
+
+    public function testAKindListedAsImmediateIsEmailed(): void
+    {
+        $alert = $this->alert([self::row('attack_attempt', '/?q=x', 404)], true, ['breach', 'exploitation']);
+        self::assertTrue($alert->notify(['kind' => 'exploitation', 'reason' => 'Exploitation attempt'] + self::context()));
+        self::assertFalse($alert->notify(self::context()));
+        self::assertCount(1, $this->sent);
+    }
+
+    public function testTheKindIsReadFromTheReasonWhenNotGiven(): void
+    {
+        self::assertSame('exploitation', SecurityAlert::kindOf('Exploitation attempt'));
+        self::assertSame('brute_force', SecurityAlert::kindOf('Likely brute force'));
+        self::assertSame('scan', SecurityAlert::kindOf('Automated scan'));
+    }
+
+    public function testWithoutBreachImmediateTheHistoryIsNotEvenRead(): void
+    {
+        $this->sent = [];
+        $db = $this->createMock(Connection::class);
+        $db->expects(self::never())->method('fetchAllAssociative');
+        $alert = new SecurityAlert($this->createStub(MailerInterface::class), new NullLogger(), $this->createStub(UrlGeneratorInterface::class), 'me@example.com', 'noreply@example.com', 'Sentinelle', 'Shop', new IpHistory($db), true, ['exploitation']);
+        self::assertFalse($alert->notify(self::context()));
     }
 }

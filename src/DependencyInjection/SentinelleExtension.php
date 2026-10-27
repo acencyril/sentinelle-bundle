@@ -52,6 +52,7 @@ class SentinelleExtension extends Extension
                      'sentinelle.alert.site_name'        => $config['alert']['site_name'],
                      'sentinelle.alert.cooldown'         => $config['alert']['cooldown'],
                      'sentinelle.alert.quiet_when_blocked' => $config['alert']['quiet_when_blocked'],
+                     'sentinelle.alert.immediate'        => array_values(array_unique($config['alert']['immediate'])),
                      'sentinelle.breach_watch'           => $config['breach_watch'],
 
                      'sentinelle.access.role'            => $config['access']['role'],

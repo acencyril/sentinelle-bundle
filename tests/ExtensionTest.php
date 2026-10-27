@@ -35,4 +35,26 @@ final class ExtensionTest extends TestCase
         self::assertFalse($container->hasDefinition(HumanPass::class));
         self::assertSame(['+1 day'], $container->getParameter('sentinelle.blocking.durations'));
     }
+
+    public function testOnlyABreachIsImmediateByDefault(): void
+    {
+        $container = self::load([]);
+        self::assertSame(['breach'], $container->getParameter('sentinelle.alert.immediate'));
+        self::assertSame('%sentinelle.alert.immediate%', $container->getDefinition(\Acencyril\SentinelleBundle\Service\SecurityAlert::class)->getArgument(9));
+        self::assertSame('%sentinelle.alert.immediate%', $container->getDefinition(\Acencyril\SentinelleBundle\EventListener\BreachWatchListener::class)->getArgument(11));
+        self::assertSame('%sentinelle.alert.immediate%', $container->getDefinition(\Acencyril\SentinelleBundle\Command\DigestCommand::class)->getArgument(5));
+    }
+
+    public function testAllRestoresAnEmailPerAlert(): void
+    {
+        $container = new ContainerBuilder();
+        (new SentinelleExtension())->load([['alert' => ['recipient' => 'me@example.com', 'immediate' => 'all']]], $container);
+        self::assertSame(['breach', 'exploitation', 'brute_force', 'scan'], $container->getParameter('sentinelle.alert.immediate'));
+    }
+
+    public function testAnUnknownKindIsRefused(): void
+    {
+        $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
+        (new SentinelleExtension())->load([['alert' => ['recipient' => 'me@example.com', 'immediate' => ['breach', 'login']]]], new ContainerBuilder());
+    }
 }

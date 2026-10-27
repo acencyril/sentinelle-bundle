@@ -287,8 +287,10 @@ class SiteEventLogger
 
         $reason = null;
         $detail = null;
+        $kind = null;
 
         if ($critical !== null) {
+            $kind = 'exploitation';
             $reason = 'Exploitation attempt';
             $detail = 'Pattern matched: ' . $critical;
         } elseif ($type === 'access_denied') {
@@ -296,12 +298,14 @@ class SiteEventLogger
             // >= rather than ==: two concurrent requests can skip the exact
             // value. The per-IP cooldown already prevents a repeated email.
             if ($count >= $this->thresholds['bruteforce']) {
+                $kind = 'brute_force';
                 $reason = 'Likely brute force';
                 $detail = sprintf('%d access denials in under %d minutes', $count, $this->thresholds['bruteforce_window'] / 60);
             }
         } elseif ($type === 'scan_probe' || $type === 'not_found') {
             $count = $this->bump('burst_' . $ip, $this->thresholds['burst_window']);
             if ($count >= $this->thresholds['burst']) {
+                $kind = 'scan';
                 $reason = 'Automated scan';
                 $detail = sprintf('%d probes in under %d minutes', $count, $this->thresholds['burst_window'] / 60);
             }
@@ -335,7 +339,7 @@ class SiteEventLogger
             );
         }
 
-        $this->notifier->notify([
+        $emailed = $this->notifier->notify([
             'reason'     => $reason,
             'detail'     => $detail,
             'ip'         => $ip,
@@ -344,7 +348,19 @@ class SiteEventLogger
             'query'      => $meta['query'] ?? null,
             'status'     => $status,
             'user_agent' => $request->headers->get('User-Agent'),
-        ]);
+            'kind'       => $kind,
+        ], $blocked);
+
+        // Every alert leaves a row, emailed or not: the daily digest counts them by kind, so an
+        // alert held back by `alert.immediate` is never lost. One per address per cooldown,
+        // like the emails they replace.
+        $this->insert('alert', $path, $status, $ip, $request->headers->get('User-Agent'), array_filter([
+            'kind'    => $kind,
+            'reason'  => $reason,
+            'detail'  => $detail,
+            'emailed' => $emailed,
+            'blocked' => $blocked !== null,
+        ], static fn ($v) => $v !== null));
     }
 
     /**

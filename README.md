@@ -50,10 +50,64 @@ a page gets a one-click proof of work instead of a bare refusal, and is let
 through; scripts and sensitive paths stay shut. See
 [The human pass](#the-human-pass-blocked-but-not-locked-out).
 
-**It emails you**, at most once per address per hour.
+**It emails you only when something got through**: a sensitive file or a secret
+actually served with a 2xx. Every other alert (scans, exploitation attempts,
+brute force) is counted in one daily digest. See
+[When it emails you](#when-it-emails-you).
 
 **And it refuses to block what you depend on.** This is the piece missing
 everywhere else, and the one that justifies this bundle.
+
+---
+
+## When it emails you
+
+Out of the box, **one kind of alert leaves at once: `breach`**, a sensitive
+address (`.env`, `.git`, keys, dumps…) answered with a 2xx, or a secret found in
+a response. Not "someone tried": the answer went out. That email is red, top
+priority, and says what to do now.
+
+Everything else is still detected, blocked and logged, then **counted in the
+daily digest** (`sentinelle:digest`): alerts by kind, hostile requests, the
+addresses blocked by reason, and the ten busiest hostile addresses. A day with
+nothing to say sends nothing.
+
+Why: a public site is scanned all day. With an email per scanner, a handful of
+sites makes over a hundred alerts a week, every one of them "blocked, nothing
+served". You learn to ignore them, filter them, archive them unread — and the
+one that matters, *a sensitive file was actually served*, looks exactly like the
+other hundred. Alert fatigue is how real incidents get missed. An address that
+was refused everything needs no action from you; one that was served `.env`
+does, within the hour.
+
+The kinds are `breach`, `exploitation` (exploit patterns: RCE, SQL injection,
+traversal, Log4Shell…), `brute_force` (repeated access denials) and `scan` (a
+burst of probes). Choose which ones email you at once:
+
+```yaml
+sentinelle:
+  alert:
+    immediate: [breach]                 # the default since 0.6
+    # immediate: [breach, exploitation] # also every exploitation attempt
+    # immediate: all                    # the pre-0.6 behaviour: an email per alert
+```
+
+To get exactly the pre-0.6 emails back, set `immediate: all` and
+`quiet_when_blocked: false` (with it on, an address already blocked whose tries
+all failed still stays quiet).
+
+Every alert, emailed or not, leaves an `alert` row in the log (its kind, the
+reason, whether it was emailed, whether the address was blocked): that is what
+the digest counts, and the dashboard shows it as a kind of its own.
+
+**Schedule the digest once a day**, or held alerts are only visible on the
+dashboard:
+
+```
+0 7 * * *  php /path/bin/console sentinelle:digest
+```
+
+`--dry-run` prints the counts without sending; `--hours=48` widens the window.
 
 ---
 
@@ -166,6 +220,8 @@ sentinelle:
     recipient:   '%env(SENTINELLE_ALERT_EMAIL)%'
     sender:      'no-reply@example.com'
     site_name:   'My Site'
+    # Kinds emailed at once; the rest goes into the daily digest.
+    immediate:   [breach]                # the default
 
   access:
     role:            ROLE_ADMIN
@@ -217,6 +273,13 @@ scan, earning seven days where it deserved twenty-four hours.
 
 ```
 0 4 * * *  php /path/bin/console sentinelle:purge
+```
+
+And the daily digest, where every alert that is not a breach ends up (see
+[When it emails you](#when-it-emails-you)):
+
+```
+0 7 * * *  php /path/bin/console sentinelle:digest
 ```
 
 ### 5. Start in dry-run
@@ -436,8 +499,12 @@ site that turns everybody away.
 
 ## Upgrading
 
-From 0.4 to 0.5, see [UPGRADE.md](UPGRADE.md): nothing to change, but blocked
-browsers now see a challenge page instead of a bare 403.
+From 0.5 to 0.6, see [UPGRADE.md](UPGRADE.md): only breaches are emailed at
+once by default; schedule `sentinelle:digest` daily, or set `alert.immediate: all`
+to keep an email per alert.
+
+From 0.4 to 0.5: nothing to change, but blocked browsers now see a challenge page
+instead of a bare 403.
 
 ### From 0.2
 

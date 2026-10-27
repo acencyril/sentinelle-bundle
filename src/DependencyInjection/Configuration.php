@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Acencyril\SentinelleBundle\DependencyInjection;
 
 use Acencyril\SentinelleBundle\Service\IpBlocklist;
+use Acencyril\SentinelleBundle\Service\SecurityAlert;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
@@ -39,6 +40,18 @@ class Configuration implements ConfigurationInterface
             ->end()
             ->booleanNode('quiet_when_blocked')->defaultTrue()
             ->info('No email for an address already blocked whose tries all failed (scanners): they are counted in sentinelle:digest. A sensitive answer served always alerts.')
+            ->end()
+            ->arrayNode('immediate')
+            ->info('Alert kinds emailed at once (breach, exploitation, brute_force, scan, or "all"). '
+                .'The others are counted in the daily digest (sentinelle:digest). Default: only breach, '
+                .'a sensitive address actually served with a 2xx. An email per scanner trains you to ignore them.')
+            ->beforeNormalization()
+            ->ifString()
+            ->then(static fn (string $v): array => 'all' === $v ? SecurityAlert::KINDS : [$v])
+            ->end()
+            ->performNoDeepMerging()
+            ->enumPrototype()->values(SecurityAlert::KINDS)->end()
+            ->defaultValue(SecurityAlert::IMMEDIATE_DEFAULT)
             ->end()
             ->integerNode('cooldown')->defaultValue(3600)
             ->info('Seconds between two alerts for the same IP. One email per attack drowns the information from the first serious scan onwards.')

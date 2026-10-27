@@ -20,7 +20,7 @@ final class SiteEventLoggerTest extends TestCase
     /** @var list<array<string, mixed>> */
     private array $rows = [];
 
-    private function logger(HumanPass $pass): SiteEventLogger
+    private function logger(HumanPass $pass, ?SecurityAlert $alert = null, ?IpBlocklist $blocklist = null): SiteEventLogger
     {
         $db = $this->createStub(Connection::class);
         $db->method('insert')->willReturnCallback(function (string $table, array $row): int {
@@ -29,7 +29,7 @@ final class SiteEventLoggerTest extends TestCase
             return 1;
         });
 
-        return new SiteEventLogger($db, new ArrayAdapter(), new NullLogger(), $this->createStub(SecurityAlert::class), $this->createStub(IpBlocklist::class), [], 3600, ['/api/webhook/'], [], [], '/admin/activity', $pass);
+        return new SiteEventLogger($db, new ArrayAdapter(), new NullLogger(), $alert ?? $this->createStub(SecurityAlert::class), $blocklist ?? $this->createStub(IpBlocklist::class), [], 3600, ['/api/webhook/'], [], [], '/admin/activity', $pass);
     }
 
     public function testAGrantedPassIsLoggedAsHumanPass(): void
@@ -68,5 +68,31 @@ final class SiteEventLoggerTest extends TestCase
         self::assertStringNotContainsString('#1f2937', $twig);
         self::assertStringContainsString("'ip_blocked': 'neutral'", $twig);
         self::assertStringContainsString('.sentinelle .is-neutral { --_tone: var(--_ink); }', $twig);
+    }
+
+    public function testEveryAlertLeavesARowForTheDigestWithItsKindAndTheBlock(): void
+    {
+        $blocked = new \Acencyril\SentinelleBundle\Entity\BlockedIp(HumanPassTest::IP, 'Exploitation attempt');
+        $blocklist = $this->createStub(IpBlocklist::class);
+        $blocklist->method('block')->willReturn($blocked);
+        $alert = $this->createMock(SecurityAlert::class);
+        $alert->expects(self::once())->method('notify')
+            ->with(self::callback(static fn (array $c): bool => 'exploitation' === $c['kind']), self::identicalTo($blocked))
+            ->willReturn(false);
+        $request = Request::create('/?f='.rawurlencode('../../../../etc/passwd'), 'GET', [], [], [], ['REMOTE_ADDR' => HumanPassTest::IP]);
+        $this->logger(HumanPassTest::pass(), $alert, $blocklist)->logRequest($request, new Response('', 404));
+
+        self::assertSame(['attack_attempt', 'alert'], array_column($this->rows, 'event_type'));
+        $meta = json_decode($this->rows[1]['meta'], true);
+        self::assertSame('exploitation', $meta['kind']);
+        self::assertFalse($meta['emailed']);
+        self::assertTrue($meta['blocked']);
+    }
+
+    public function testAScanBelowTheBurstThresholdRaisesNoAlert(): void
+    {
+        $request = Request::create('/.env', 'GET', [], [], [], ['REMOTE_ADDR' => HumanPassTest::IP]);
+        $this->logger(HumanPassTest::pass())->logRequest($request, new Response('', 404));
+        self::assertSame(['scan_probe'], array_column($this->rows, 'event_type'));
     }
 }

@@ -1,5 +1,28 @@
 # Upgrading
 
+## From 0.5 to 0.6
+
+**Behaviour change: only breaches are emailed at once.** A breach is a sensitive
+address answered with a 2xx, or a secret in a response. Automated scans,
+exploitation attempts and brute force are still detected, blocked and logged,
+but no longer emailed one by one: they are counted in `sentinelle:digest`.
+
+1. Make sure `sentinelle:digest` runs once a day (cron, Symfony Scheduler,
+   Messenger worker…). Without it, held alerts are only visible on the
+   dashboard. It sends nothing on a day with nothing to report.
+2. To keep some kinds immediate:
+   `sentinelle.alert.immediate: [breach, exploitation]`.
+   To restore an email per alert: `immediate: all` and
+   `quiet_when_blocked: false`.
+
+No schema change. Every alert now also writes a row of type `alert` in
+`sentinelle_visit` (one per address per cooldown, like the emails it replaces).
+`SecurityAlert::notify()` now returns whether an email went out (`bool`).
+
+`quiet_when_blocked` now actually applies: the alert used to be sent without the
+block it had just caused, so it always read "not blocked automatically" and was
+never quiet.
+
 ## From 0.5.0 to 0.5.1
 
 Nothing to change. The dashboard has a new look and is translated (English and
