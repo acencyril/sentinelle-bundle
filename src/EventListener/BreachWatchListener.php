@@ -18,6 +18,7 @@ use Symfony\Component\HttpKernel\Event\TerminateEvent;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
+use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 /**
  * The alarm that matters: not "someone tried", but "it worked".
@@ -48,6 +49,8 @@ final class BreachWatchListener
         /** @var list<string> */
         private array $immediate = ['breach'],
         private Mail $mail = new Mail(),
+        private ?AuthorizationCheckerInterface $authChecker = null,
+        private string $trustedRole = 'ROLE_ADMIN',
     ) {
     }
 
@@ -78,6 +81,12 @@ final class BreachWatchListener
         if (!$sensitive && null === $leak) {
             return;
         }
+        // A page shown to a signed-in administrator (the dashboard's role) may quote a secret-like
+        // string on purpose (a report draft, a config example): not a leak. Sensitive files stay
+        // watched for everyone.
+        if (!$sensitive && $this->isTrusted()) {
+            return;
+        }
 
         $ip = $request->getClientIp() ?? 'unknown';
         $this->events->log('breach_served', $path, $ip, $request->headers->get('User-Agent'), ['method' => $request->getMethod(), 'status' => $status, 'secret' => null !== $leak]);
@@ -94,6 +103,15 @@ final class BreachWatchListener
         }
         $this->cache->save($item->set(1)->expiresAfter(600));
         $this->send($ip, $request->getMethod().' '.$path.($request->getQueryString() ? '?'.$request->getQueryString() : ''), $status, $leak, (string) $request->headers->get('User-Agent'), null !== $blocked);
+    }
+
+    private function isTrusted(): bool
+    {
+        try {
+            return null !== $this->authChecker && $this->authChecker->isGranted($this->trustedRole);
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function send(string $ip, string $request, int $status, ?string $leak, string $agent, bool $blocked): void

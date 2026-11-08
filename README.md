@@ -69,7 +69,10 @@ everywhere else, and the one that justifies this bundle.
 
 Out of the box, **one kind of alert leaves at once: `breach`**, a sensitive
 address (`.env`, `.git`, keys, dumps…) answered with a 2xx, or a secret found in
-a response. Not "someone tried": the answer went out. That email is red, top
+a response. Not "someone tried": the answer went out. A page served to a signed-in
+user with the dashboard's role (`access.role`) is not searched for secrets: an admin
+page may quote one on purpose (a report draft, a config example). Sensitive addresses
+stay watched for everyone. That email is red, top
 priority, and says what to do now.
 
 Everything else is still detected, blocked and logged, then **counted in the

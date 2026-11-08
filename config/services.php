@@ -92,6 +92,8 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             service(HumanPass::class)->nullOnInvalid(),
             '%sentinelle.alert.immediate%',
             service(Mail::class),
+            service('security.authorization_checker')->nullOnInvalid(),
+            '%sentinelle.access.role%',
         ])
         ->tag('kernel.event_listener', [
             'event' => 'kernel.terminate', 'method' => 'onKernelTerminate', 'priority' => -64,

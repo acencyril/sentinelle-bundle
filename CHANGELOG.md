@@ -6,6 +6,17 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-11-08
+
+### Fixed
+- **No false breach alarm on an admin page.** A page served to a signed-in user with the
+  dashboard's role (`access.role`, default `ROLE_ADMIN`) is no longer searched for secrets: an
+  admin page may quote a secret-like string on purpose (a report draft, a config example) and
+  used to trigger a red alarm and a 30-day block of the administrator's own address. Sensitive
+  addresses (`.env`, `.git`, keys, dumps…) served with a 2xx still raise the alarm for everyone,
+  administrators included. Without symfony/security, nothing changes.
+- An unreadable block duration no longer raises a PHP warning on PHP 8.1 and 8.2.
+
 ## [0.7.1] — 2026-10-27
 
 ### Added

@@ -72,7 +72,11 @@ partout ailleurs, et celle qui justifie ce bundle.
 
 Par défaut, **un seul type d'alerte part tout de suite : `breach`**, une adresse
 sensible (`.env`, `.git`, clés, dumps…) servie avec un 2xx, ou un secret trouvé
-dans une réponse. Pas « quelqu'un a essayé » : la réponse est partie. Ce courriel
+dans une réponse. Pas « quelqu'un a essayé » : la réponse est partie. Une page servie
+à un utilisateur connecté avec le rôle du tableau de bord (`access.role`) n'est pas
+fouillée à la recherche de secrets : une page d'admin peut en citer exprès (un brouillon
+de rapport, un exemple de configuration). Les adresses sensibles restent surveillées pour
+tout le monde. Ce courriel
 est rouge, en priorité maximale, et dit quoi faire maintenant.
 
 Tout le reste est toujours détecté, bloqué et journalisé, puis **compté dans le
