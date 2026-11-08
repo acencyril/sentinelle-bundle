@@ -105,7 +105,8 @@ class IpBlocklist
         }
         $now = new \DateTimeImmutable();
         try {
-            $then = $now->modify($duration);
+            // PHP < 8.3 warns and returns false on an unreadable string: silenced, false is handled below
+            $then = @$now->modify($duration);
         } catch (\Throwable) {
             return null;
         }
