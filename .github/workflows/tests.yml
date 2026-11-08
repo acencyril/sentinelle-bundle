@@ -12,6 +12,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # every PHP and Symfony line composer.json accepts, oldest first (the LTS lines a company runs)
+          - { php: '8.1', symfony: '6.4.*' }
+          - { php: '8.2', symfony: '7.4.*' }
           - { php: '8.3', symfony: '' }
           - { php: '8.4', symfony: '8.*' }
     name: PHP ${{ matrix.php }}${{ matrix.symfony && format(' / Symfony {0}', matrix.symfony) || '' }}
@@ -23,3 +26,4 @@ jobs:
         with: { php-version: '${{ matrix.php }}', coverage: none, tools: 'composer, flex' }
       - run: composer update --no-interaction --no-progress --prefer-dist
       - run: vendor/bin/phpunit
+      - run: composer audit --abandoned=report   # a known vulnerable dependency fails the build
